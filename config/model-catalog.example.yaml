@@ -1,0 +1,21 @@
+# 仅含逻辑占位符；实施时以实测版本和供应商日志填充。
+models:
+  - id: domestic-executor-placeholder
+    role: executor
+    provider: unselected
+    status: unqualified # unqualified | testing | qualified | quarantined | deprecated
+    context_window: null
+    max_output_tokens: null
+    supports_streaming: unknown
+    supports_tool_loop: unknown
+    responses_compatibility: unknown
+    identity_evidence: null
+    last_validated_at: null
+    expires_at: null
+    notes: "不得用于真实调用；先完成 Phase 0。"
+
+  - id: gpt-5.6-sol
+    role: planner_and_reviewer
+    provider: openai
+    status: qualified_by_current_session_only
+    notes: "价格、能力和可用性在实施时重新核验；此条不替代正式模型认证。"

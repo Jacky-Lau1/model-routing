@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Model Routing Task Packet",
+  "type": "object",
+  "required": ["task_id", "objective", "allowed_files", "constraints", "acceptance", "stop_conditions", "budget"],
+  "properties": {
+    "task_id": {"type": "string"},
+    "parent_summary": {"type": "string"},
+    "objective": {"type": "string"},
+    "allowed_files": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "constraints": {"type": "array", "items": {"type": "string"}},
+    "code_context": {"type": "array", "items": {"type": "object", "required": ["path", "summary"], "properties": {"path": {"type": "string"}, "summary": {"type": "string"}}}},
+    "acceptance": {"type": "object", "required": ["commands", "definition_of_done"], "properties": {"commands": {"type": "array", "items": {"type": "string"}}, "definition_of_done": {"type": "array", "items": {"type": "string"}}}},
+    "stop_conditions": {"type": "array", "items": {"type": "string"}},
+    "budget": {"type": "object", "required": ["max_attempts"], "properties": {"max_attempts": {"type": "integer", "minimum": 1}, "max_input_tokens": {"type": "integer"}, "max_output_tokens": {"type": "integer"}}}
+  },
+  "additionalProperties": false
+}

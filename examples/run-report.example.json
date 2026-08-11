@@ -1,0 +1,17 @@
+{
+  "run_id": "DEMO-RUN-001",
+  "task_id": "DEMO-001",
+  "phase": "COMPLETED",
+  "outcome": "passed",
+  "route_evidence": {
+    "expected_role": "executor",
+    "actual_provider": "placeholder-provider",
+    "actual_model": "placeholder-model",
+    "request_id": "redacted-demo-request-id",
+    "verified_by": "gateway server log"
+  },
+  "files_changed": ["src/example.ts", "tests/example.test.ts"],
+  "validation": {"commands": [{"command": "<project-test-command>", "exit_code": 0}], "passed": true},
+  "usage": {"input_tokens": 0, "output_tokens": 0, "currency": "not-a-real-run"},
+  "redaction_notes": "此文件是虚构示例，未调用任何模型。"
+}
