@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Model Routing Run Report",
+  "type": "object",
+  "required": ["run_id", "task_id", "phase", "outcome", "route_evidence", "validation"],
+  "properties": {
+    "run_id": {"type": "string"},
+    "task_id": {"type": "string"},
+    "phase": {"enum": ["INTAKE", "PLAN", "EXECUTOR_REQUIRED", "LOCAL_VALIDATE", "REVIEW", "SOL_ESCALATION", "COMPLETED", "BLOCKED"]},
+    "outcome": {"enum": ["passed", "failed", "escalated", "blocked"]},
+    "route_evidence": {"type": "object", "required": ["expected_role", "actual_provider", "actual_model", "request_id", "verified_by"], "properties": {"expected_role": {"type": "string"}, "actual_provider": {"type": "string"}, "actual_model": {"type": "string"}, "request_id": {"type": "string"}, "verified_by": {"type": "string"}}},
+    "files_changed": {"type": "array", "items": {"type": "string"}},
+    "validation": {"type": "object", "required": ["commands", "passed"], "properties": {"commands": {"type": "array", "items": {"type": "object"}}, "passed": {"type": "boolean"}}},
+    "usage": {"type": "object"},
+    "escalation_reason": {"type": "string"},
+    "redaction_notes": {"type": "string"}
+  },
+  "additionalProperties": false
+}

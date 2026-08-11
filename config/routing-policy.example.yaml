@@ -1,0 +1,42 @@
+# 示例：仅作设计参考。真实端点和凭据必须保留在受保护的本机配置中。
+version: 1
+mode: design-only
+defaults:
+  fail_closed: true
+  allow_silent_fallback: false
+  max_executor_attempts: 2
+  require_local_validation: true
+  require_sol_review: true
+  task_packet_max_context_ratio: 0.35
+
+roles:
+  planner:
+    route: sol
+  reviewer:
+    route: sol
+  executor:
+    allowed_models: [] # Phase 0 通过后填写逻辑别名，不填写真实密钥或端点
+
+eligibility:
+  allow:
+    - focused_bug_fix
+    - local_refactor
+    - test_addition
+    - bounded_implementation
+  deny:
+    - architecture_change
+    - security_sensitive
+    - auth_or_payment
+    - database_migration
+    - dependency_upgrade
+    - deployment
+    - secret_access
+
+escalate_when:
+  - ambiguous_requirement
+  - model_identity_unverified
+  - route_unavailable
+  - task_packet_over_budget
+  - executor_scope_violation
+  - validation_failed_twice
+  - cost_budget_exceeded

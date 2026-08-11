@@ -1,0 +1,19 @@
+# Secrets and local overrides
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+*.pem
+*.key
+
+# Runtime data (keep the templates in logs/)
+logs/runs/
+logs/raw/
+logs/*.local.*
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
