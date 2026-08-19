@@ -10,6 +10,7 @@
 - Codex ephemeral、DeepSeek Responses 与本地验证适配器。
 - Microsoft Store Codex CLI 安装同步脚本与隔离的 Router Home。
 - Windows DPAPI DeepSeek 凭据存储和受限实机质量/费用基准。
+- Auto/DeepSeek/Codex 终端入口面板、Windows 快捷方式安装器和混合路由测评方案。
 - `route auto/approve/revise/status/resume/abort/benchmark/live-benchmark/cleanup` CLI。
 - 离线路由、审批失效、持久化和端到端状态测试。
 

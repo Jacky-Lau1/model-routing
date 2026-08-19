@@ -32,12 +32,17 @@ pnpm install
 pnpm run check
 pnpm run route benchmark
 pnpm run route live-benchmark
+pnpm run terminal
 pnpm run route auto "修复一个局部 TypeScript bug" --project C:\path\to\project
 ```
 
 `auto` 只生成计划并停在审批点。检查计划、文件范围和验收命令后，再运行输出中的 `route approve`。DeepSeek 执行可使用本机环境变量 `DEEPSEEK_API_KEY`，也可使用下述 DPAPI 凭据文件；凭据不会写入任务状态。
 
 真实 DeepSeek 验证前运行 `powershell -File scripts/set-deepseek-key.ps1`，交互式录入的 Key 会使用当前 Windows 用户的 DPAPI 加密保存在仓库外。`live-benchmark` 会在临时 Git 仓库中运行一个受限修复任务，并把真实 token、缓存、估算成本和质量分数写入被 Git 忽略的 `logs/runs/`。
+
+运行 `scripts/install-router-terminal.ps1` 会创建“Codex Router Agent Terminal”桌面和开始菜单入口。面板包含 Auto、DeepSeek V4 Flash、DeepSeek V4 Pro 和原生 Codex 四项；前三项都先由 Terra 规划并显示批准边界。原生 Codex 终端仍使用 `/model` 切换 OpenAI 模型，因为 Codex 自定义 provider 只接受 Responses 协议，而 DeepSeek V4 官方接口当前为 Chat Completions/Anthropic 协议。
+
+混合模型正式测评设计见 [docs/12-evaluation-plan.md](docs/12-evaluation-plan.md)，默认不自动下载或运行外部基准。
 
 ## 当前约束
 
