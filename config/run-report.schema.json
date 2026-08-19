@@ -6,12 +6,20 @@
   "properties": {
     "run_id": {"type": "string"},
     "task_id": {"type": "string"},
-    "phase": {"enum": ["INTAKE", "PLAN", "EXECUTOR_REQUIRED", "LOCAL_VALIDATE", "REVIEW", "SOL_ESCALATION", "COMPLETED", "BLOCKED"]},
+    "phase": {"enum": ["INTAKE", "PROFILED", "PLANNING", "WAITING_APPROVAL", "EXECUTING", "VALIDATING", "REVIEWING", "REPAIRING", "SOL_DIAGNOSIS", "WAITING_REAPPROVAL", "COMPLETED", "BLOCKED", "ABORTED"]},
     "outcome": {"enum": ["passed", "failed", "escalated", "blocked"]},
     "route_evidence": {"type": "object", "required": ["expected_role", "actual_provider", "actual_model", "request_id", "verified_by"], "properties": {"expected_role": {"type": "string"}, "actual_provider": {"type": "string"}, "actual_model": {"type": "string"}, "request_id": {"type": "string"}, "verified_by": {"type": "string"}}},
     "files_changed": {"type": "array", "items": {"type": "string"}},
     "validation": {"type": "object", "required": ["commands", "passed"], "properties": {"commands": {"type": "array", "items": {"type": "object"}}, "passed": {"type": "boolean"}}},
-    "usage": {"type": "object"},
+    "usage": {"type": "object", "properties": {
+      "inputTokens": {"type": "integer", "minimum": 0},
+      "outputTokens": {"type": "integer", "minimum": 0},
+      "reasoningTokens": {"type": "integer", "minimum": 0},
+      "cachedInputTokens": {"type": "integer", "minimum": 0},
+      "cacheWriteTokens": {"type": "integer", "minimum": 0},
+      "cacheHitTokens": {"type": "integer", "minimum": 0},
+      "cacheMissTokens": {"type": "integer", "minimum": 0}
+    }, "additionalProperties": false},
     "escalation_reason": {"type": "string"},
     "redaction_notes": {"type": "string"}
   },

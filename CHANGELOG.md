@@ -4,9 +4,14 @@
 
 ## [Unreleased]
 
-### Planned
+### Added
 
-- Phase 0：验证 Codex、网关和候选执行模型的实际兼容性。
+- TypeScript 确定性路由、审批哈希、状态机和低写入检查点。
+- Codex ephemeral、DeepSeek Responses 与本地验证适配器。
+- Microsoft Store Codex CLI 安装同步脚本与隔离的 Router Home。
+- Windows DPAPI DeepSeek 凭据存储和受限实机质量/费用基准。
+- `route auto/approve/revise/status/resume/abort/benchmark/live-benchmark/cleanup` CLI。
+- 离线路由、审批失效、持久化和端到端状态测试。
 
 ## [0.1.0] - 2026-08-11
 

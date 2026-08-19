@@ -2,11 +2,11 @@
 
 > 面向 Codex Desktop 的“强模型规划与验收 + 低成本模型受控执行”方案档案库。
 
-**状态：设计归档，尚未实施。** 这里记录的是未来落地的规范、验证方法和运维材料；不包含任何 API 密钥、可直接调用的生产配置或自动执行脚本。
+**状态：Phase 0/1 最小实现。** 仓库现包含 TypeScript 确定性控制层、审批状态机、Codex/DeepSeek CLI 适配器、低写入检查点和离线路由测试。默认失败关闭；在完成真实供应商 10 次验证前，不应宣称生产可用。
 
 ## 目标
 
-在不牺牲可验证质量的前提下，让 GPT-5.6 Sol 负责需求澄清、架构、拆解、关键审查与升级决策；让经过验证的国内/低成本模型只执行边界清晰的编码任务。系统必须保留可追溯任务状态，避免静默降级，并用本地测试与 Sol 审核把关。
+在不牺牲可验证质量的前提下，让 GPT-5.6 Terra 默认负责分类、规划与审查，只有高风险规划和二次失败诊断才升级 Sol；让 DeepSeek V4 Flash/Pro 执行边界清晰的文本或编码任务。系统必须保留可追溯任务状态，避免静默降级，并用本地测试与 Terra 审核把关。
 
 这不是“把所有工作交给便宜模型”。它是一个有状态、可审计、失败即停止的分层工作流。
 
@@ -23,6 +23,21 @@
 - [决策记录](docs/08-decisions.md)
 - [现成项目参考](docs/09-reference-projects.md)
 - [未来实施交接说明](docs/10-future-implementation-brief.md)
+- [最小实现与 CLI](docs/11-implementation.md)
+
+## 本地运行
+
+```powershell
+pnpm install
+pnpm run check
+pnpm run route benchmark
+pnpm run route live-benchmark
+pnpm run route auto "修复一个局部 TypeScript bug" --project C:\path\to\project
+```
+
+`auto` 只生成计划并停在审批点。检查计划、文件范围和验收命令后，再运行输出中的 `route approve`。DeepSeek 执行可使用本机环境变量 `DEEPSEEK_API_KEY`，也可使用下述 DPAPI 凭据文件；凭据不会写入任务状态。
+
+真实 DeepSeek 验证前运行 `powershell -File scripts/set-deepseek-key.ps1`，交互式录入的 Key 会使用当前 Windows 用户的 DPAPI 加密保存在仓库外。`live-benchmark` 会在临时 Git 仓库中运行一个受限修复任务，并把真实 token、缓存、估算成本和质量分数写入被 Git 忽略的 `logs/runs/`。
 
 ## 当前约束
 

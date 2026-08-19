@@ -11,9 +11,13 @@ credentials/
 logs/runs/
 logs/raw/
 logs/*.local.*
+.router-state/
+*.log
 
-# Editor and OS
+# Editor, OS, and build output
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+node_modules/
+dist/
