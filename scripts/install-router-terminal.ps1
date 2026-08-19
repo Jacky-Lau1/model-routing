@@ -15,14 +15,24 @@ $shortcutDirectories = @([Environment]::GetFolderPath('Programs'))
 if (-not $SkipDesktop) { $shortcutDirectories += [Environment]::GetFolderPath('Desktop') }
 $icon = if ($env:CODEX_CLI_PATH -and (Test-Path -LiteralPath $env:CODEX_CLI_PATH)) { $env:CODEX_CLI_PATH } else { 'powershell.exe' }
 
+$entries = @(
+  @{ Name = 'Codex Router Agent Terminal'; Mode = 'Menu'; Description = 'Choose Auto, DeepSeek Flash, DeepSeek Pro, or OpenAI Codex' },
+  @{ Name = 'Codex Router - Auto'; Mode = 'Auto'; Description = 'Classify, plan, approve, and route automatically' },
+  @{ Name = 'Codex Router - DeepSeek Flash'; Mode = 'Flash'; Description = 'Open native Codex with DeepSeek V4 Flash Responses API' },
+  @{ Name = 'Codex Router - DeepSeek Pro'; Mode = 'Pro'; Description = 'Open native Codex with DeepSeek V4 Pro Responses API' },
+  @{ Name = 'Codex Router - OpenAI'; Mode = 'OpenAI'; Description = 'Open native Codex with the normal OpenAI configuration' }
+)
+
 foreach ($directory in $shortcutDirectories) {
-  $shortcutPath = Join-Path $directory 'Codex Router Agent Terminal.lnk'
-  $shortcut = $shell.CreateShortcut($shortcutPath)
-  $shortcut.TargetPath = 'powershell.exe'
-  $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`""
-  $shortcut.WorkingDirectory = $RepositoryRoot
-  $shortcut.IconLocation = "$icon,0"
-  $shortcut.Description = 'Auto, DeepSeek Flash, DeepSeek Pro, and native Codex entry menu'
-  $shortcut.Save()
-  Write-Output $shortcutPath
+  foreach ($entry in $entries) {
+    $shortcutPath = Join-Path $directory "$($entry.Name).lnk"
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = 'powershell.exe'
+    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -Mode $($entry.Mode)"
+    $shortcut.WorkingDirectory = $RepositoryRoot
+    $shortcut.IconLocation = "$icon,0"
+    $shortcut.Description = $entry.Description
+    $shortcut.Save()
+    Write-Output $shortcutPath
+  }
 }

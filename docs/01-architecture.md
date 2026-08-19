@@ -2,7 +2,7 @@
 
 ## 选择：保持 Codex Desktop，但使用确定性桥接
 
-当前路径是：Codex Desktop/Codex CLI 中的 Terra 负责普通规划与最终审查，Sol 只处理高风险规划和二次失败诊断；一个可审计的本地工作流通过 DeepSeek 官方 Chat Completions API 将合格任务交给 V4 Flash/Pro。
+当前路径是：Codex Desktop/Codex CLI 中的 Terra 负责普通规划与最终审查，Sol 只处理高风险规划和二次失败诊断；一个可审计的本地工作流通过 DeepSeek 官方 API 将合格任务交给 V4 Flash/Pro。受控执行器使用 Chat Completions，原生 Codex Flash/Pro Profile 使用 Responses API。
 
 不能把正确性押在“Sol 原生自动委派一定会调用指定执行模型”上。当前产品版本与模型角色选择会变化；因此选路、权限、状态和日志应由确定性控制层执行。Sol 可以提出计划，但不能单独作为路由器是否真的按计划执行的证据。
 

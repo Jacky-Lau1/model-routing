@@ -20,7 +20,7 @@
 
 每个阶段都在 `src/policy.ts` 中显式指定模型、effort、输出 token、工具轮数、超时和修复次数。自动策略不产生 OpenAI `high/xhigh/max/pro` 或 DeepSeek `max`。敏感任务不进入 DeepSeek，改用 ephemeral Terra，且不生成可复用 cache key。
 
-OpenAI 阶段通过 Codex CLI 执行。启动前会读取 `codex exec --help` 并确认 `--ephemeral`；不支持时直接停止，不会回退为持久会话。DeepSeek V4 使用官方 Chat Completions API 和受限文件工具直连，因为官方 V4 目前不是 Codex 自定义 provider 所需的 Responses wire API。
+OpenAI 阶段通过 Codex CLI 执行。启动前会读取 `codex exec --help` 并确认 `--ephemeral`；不支持时直接停止，不会回退为持久会话。受控 DeepSeek 执行器使用官方 Chat Completions API 和受限文件工具直连；DeepSeek 现已同时原生支持 Responses API，因此 Flash/Pro Profile 可以直接运行完整 Codex Agent 终端。
 
 DeepSeek 官方 V4 思考模式只提供关闭、`high` 和 `max`；`low/medium` 实际映射为 `high`。因此普通 Flash 执行和纯文本扩写明确关闭思考，复杂 Pro 使用 `high`，自动模式仍禁止 `max`。工具调用期间的 `reasoning_content` 只保留在内存消息链中并完整回传，阶段结束即释放。
 
