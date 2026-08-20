@@ -42,6 +42,8 @@ pnpm run route auto "修复一个局部 TypeScript bug" --project C:\path\to\pro
 
 先运行 `scripts/install-codex-deepseek-profiles.ps1`，再运行 `scripts/install-router-terminal.ps1`，即可创建菜单以及 Auto、原生 DeepSeek V4 Flash、原生 DeepSeek V4 Pro、OpenAI Codex 四个独立的桌面和开始菜单入口。DeepSeek 官方现已提供 Codex 所需的 Responses API；安装器从固定 SHA-256 的官方脚本提取模型目录，并使用 Codex 的命令式认证读取 Windows DPAPI 凭据，不把 Key 明文写进 `config.toml`。
 
+安装器还会创建 `Codex Native Menu - DeepSeek Flash`、`Codex Native Menu - DeepSeek Pro` 和 `Codex Native Menu - Restore OpenAI` 三个入口。它们会原子切换 Codex Desktop 共用的全局提供商配置，使应用重启后的原生模型下拉菜单显示对应 DeepSeek 模型；首次切换会在 `%LOCALAPPDATA%\CodexRouter\native-mode\` 保存 OpenAI 配置，恢复时校验哈希并原样还原。入口不会强制结束正在运行的 Codex，请正常关闭并重新打开应用后查看菜单。Auto 是路由工作流而非单个供应商模型，因此仍使用独立的 Router 入口，不会伪装成原生模型菜单项。
+
 混合模型正式测评设计见 [docs/12-evaluation-plan.md](docs/12-evaluation-plan.md)，默认不自动下载或运行外部基准。
 
 ## 当前约束

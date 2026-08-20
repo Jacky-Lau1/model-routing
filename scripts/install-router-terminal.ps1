@@ -8,7 +8,9 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = Split-Path -Parent $PSScriptRoot }
 $RepositoryRoot = [IO.Path]::GetFullPath($RepositoryRoot)
 $launcher = Join-Path $RepositoryRoot 'scripts\router-terminal.ps1'
+$nativeModeSwitcher = Join-Path $RepositoryRoot 'scripts\switch-codex-native-mode.ps1'
 if (-not (Test-Path -LiteralPath $launcher)) { throw "Launcher not found: $launcher" }
+if (-not (Test-Path -LiteralPath $nativeModeSwitcher)) { throw "Native mode switcher not found: $nativeModeSwitcher" }
 
 $shell = New-Object -ComObject WScript.Shell
 $shortcutDirectories = @([Environment]::GetFolderPath('Programs'))
@@ -29,6 +31,23 @@ foreach ($directory in $shortcutDirectories) {
     $shortcut = $shell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = 'powershell.exe'
     $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -Mode $($entry.Mode)"
+    $shortcut.WorkingDirectory = $RepositoryRoot
+    $shortcut.IconLocation = "$icon,0"
+    $shortcut.Description = $entry.Description
+    $shortcut.Save()
+    Write-Output $shortcutPath
+  }
+
+  $nativeEntries = @(
+    @{ Name = 'Codex Native Menu - DeepSeek Flash'; Mode = 'DeepSeekFlash'; Description = 'Switch the Codex Desktop native model menu to DeepSeek V4 Flash' },
+    @{ Name = 'Codex Native Menu - DeepSeek Pro'; Mode = 'DeepSeekPro'; Description = 'Switch the Codex Desktop native model menu to DeepSeek V4 Pro' },
+    @{ Name = 'Codex Native Menu - Restore OpenAI'; Mode = 'OpenAI'; Description = 'Restore the OpenAI config saved before native DeepSeek mode' }
+  )
+  foreach ($entry in $nativeEntries) {
+    $shortcutPath = Join-Path $directory "$($entry.Name).lnk"
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = 'powershell.exe'
+    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$nativeModeSwitcher`" -Mode $($entry.Mode)"
     $shortcut.WorkingDirectory = $RepositoryRoot
     $shortcut.IconLocation = "$icon,0"
     $shortcut.Description = $entry.Description
