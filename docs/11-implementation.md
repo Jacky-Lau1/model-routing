@@ -1,5 +1,7 @@
 # 11｜最小实现与 CLI
 
+> 历史实现说明：本文描述 Draft PR #1 在 Orchestrator-first 整改前的代码状态。native DeepSeek profile、主 working tree 执行和后台 Codex planning/review 不再代表目标架构。当前执行基线见 `docs/16-orchestrator-first-implementation-plan.md`；S0 尚未完成前，不要把下述脚本当作推荐安装流程。
+
 ## 已实现边界
 
 当前实现是 Windows 优先的 TypeScript 控制层：确定性任务分类、显式推理预算、计划/路由审批哈希、失败关闭状态机、阶段检查点、Codex ephemeral 调用、DeepSeek Responses provider 配置、本地质量门、一次修复和 Sol 二次失败诊断。

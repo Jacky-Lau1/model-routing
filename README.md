@@ -2,11 +2,11 @@
 
 > 面向 Codex Desktop 的“强模型规划与验收 + 低成本模型受控执行”方案档案库。
 
-**状态：Phase 0/1 最小实现。** 仓库现包含 TypeScript 确定性控制层、审批状态机、Codex/DeepSeek CLI 适配器、低写入检查点和离线路由测试。默认失败关闭；在完成真实供应商 10 次验证前，不应宣称生产可用。
+**状态：Orchestrator-first 整改已完成详细规划，代码仍处于旧 Phase 0/1 Draft。** 仓库已有 TypeScript 确定性控制层、审批状态机、Direct DeepSeek Adapter、低写入检查点和离线路由测试，但尚未完成 worktree 隔离、真实权限边界、完整 RouteBinding、ambiguous paid-call 语义、EvidenceBundle 和 GPT 前台接入。现有 native provider/menu 路径已被架构决定废弃为默认方案，等待 S0 代码退役。在 S0–S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
 
 ## 目标
 
-在不牺牲可验证质量的前提下，让 GPT-5.6 Terra 默认负责分类、规划与审查，只有高风险规划和二次失败诊断才升级 Sol；让 DeepSeek V4 Flash/Pro 执行边界清晰的文本或编码任务。系统必须保留可追溯任务状态，避免静默降级，并用本地测试与 Terra 审核把关。
+用户始终只在常驻 GPT 模型的 Codex 主会话工作。GPT 负责需求理解、规划、架构和风险判断以及最终 Review；DeepSeek 只在后台作为受控代码修改引擎；本地 Orchestrator 负责确定性路由、审批、隔离、预算、隐私、状态和证据。正常流程不切换 Codex Desktop provider，不依赖原生模型菜单或 Restore OpenAI。
 
 这不是“把所有工作交给便宜模型”。它是一个有状态、可审计、失败即停止的分层工作流。
 
@@ -24,28 +24,18 @@
 - [现成项目参考](docs/09-reference-projects.md)
 - [未来实施交接说明](docs/10-future-implementation-brief.md)
 - [最小实现与 CLI](docs/11-implementation.md)
+- [混合路由测评设计](docs/12-evaluation-plan.md)
 - [继续研发交接](docs/13-continuation-handoff.md)
+- [Orchestrator-first 架构基线](docs/14-orchestrator-first-proposal.md)
+- [迁移背景与问题诊断](docs/15-orchestrator-first-handoff.md)
+- [最终实施计划、阶段门与 TODO](docs/16-orchestrator-first-implementation-plan.md)
+- [分阶段新对话交接与 Prompt](docs/17-orchestrator-first-stage-handoffs.md)
 
-## 本地运行
+## 当前运行警告
 
-```powershell
-pnpm install
-pnpm run check
-pnpm run route benchmark
-pnpm run route live-benchmark
-pnpm run terminal
-pnpm run route auto "修复一个局部 TypeScript bug" --project C:\path\to\project
-```
+Draft PR 中的现有 CLI 和脚本代表整改前实现，不应被理解为最终 Orchestrator-first 入口。尤其不要把 native DeepSeek menu/profile 或 Restore OpenAI 用作正常工作流。S0 尚未完成代码退役前，本仓库建议只做只读审查和明确授权的离线测试。
 
-`auto` 只生成计划并停在审批点。检查计划、文件范围和验收命令后，再运行输出中的 `route approve`。DeepSeek 执行可使用本机环境变量 `DEEPSEEK_API_KEY`，也可使用下述 DPAPI 凭据文件；凭据不会写入任务状态。
-
-真实 DeepSeek 验证前运行 `powershell -File scripts/set-deepseek-key.ps1`，交互式录入的 Key 会使用当前 Windows 用户的 DPAPI 加密保存在仓库外。`live-benchmark` 会在临时 Git 仓库中运行一个受限修复任务，并把真实 token、缓存、估算成本和质量分数写入被 Git 忽略的 `logs/runs/`。
-
-先运行 `scripts/install-codex-deepseek-profiles.ps1`，再运行 `scripts/install-router-terminal.ps1`，即可创建菜单以及 Auto、原生 DeepSeek V4 Flash、原生 DeepSeek V4 Pro、OpenAI Codex 四个独立的桌面和开始菜单入口。DeepSeek 官方现已提供 Codex 所需的 Responses API；安装器从固定 SHA-256 的官方脚本提取模型目录，并使用 Codex 的命令式认证读取 Windows DPAPI 凭据，不把 Key 明文写进 `config.toml`。
-
-安装器还会创建 `Codex Native Menu - DeepSeek Flash`、`Codex Native Menu - DeepSeek Pro` 和 `Codex Native Menu - Restore OpenAI` 三个入口。它们会原子切换 Codex Desktop 共用的全局提供商配置，使应用重启后的原生模型下拉菜单显示对应 DeepSeek 模型；首次切换会在 `%LOCALAPPDATA%\CodexRouter\native-mode\` 保存 OpenAI 配置，恢复时校验哈希并原样还原。入口不会强制结束正在运行的 Codex，请正常关闭并重新打开应用后查看菜单。Auto 是路由工作流而非单个供应商模型，因此仍使用独立的 Router 入口，不会伪装成原生模型菜单项。
-
-混合模型正式测评设计见 [docs/12-evaluation-plan.md](docs/12-evaluation-plan.md)，默认不自动下载或运行外部基准。
+`live-benchmark` 会产生真实 API 请求和费用，不得在默认检查、阶段 S0–S9 或未获授权的会话中运行。现有 DPAPI/profile/native switch 脚本也不得用于测试整改方案。S0 将从默认路径移除这些入口。每个阶段允许运行的零费用命令和临时目录要求以 `docs/16`、`docs/17` 为准。
 
 ## 当前约束
 
@@ -54,12 +44,15 @@ pnpm run route auto "修复一个局部 TypeScript bug" --project C:\path\to\pro
 3. 低成本模型不可直接承担架构、权限扩大、发布、密钥处理或最终质量验收。
 4. 路由不可用、身份无法证明或测试失败时，必须显式停止/升级，不能静默回退到 Sol 或其他模型。
 5. 所有密钥仅保留在本机环境变量、系统凭据库或获批准的密钥管理服务中，绝不提交到本仓库。
+6. DeepSeek 不直接写主 working tree；worktree 只提供变更隔离，真实安全还依赖 capability/sandbox。
+7. 未分类数据默认禁止第三方；私有数据外发必须绑定 provider、任务、路径/内容和审批。
+8. LLM 调用状态不明时进入 `AMBIGUOUS/BLOCKED`，不自动重发可能计费的请求。
 
 ## 建议的未来入口
 
-当准备继续研发时，可直接使用 [新对话继续研发 Prompt](prompts/continue-model-routing.md)；也可以对 Codex 说：
+实施已拆成一个阶段一个新对话。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 S0–S10 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。[继续研发 Prompt](prompts/continue-model-routing.md) 提供当前 S0 简版入口。
 
-> 访问 `Jacky-Lau1/模型路由`，先阅读 `docs/10-future-implementation-brief.md`、`docs/08-decisions.md` 和 `logs/` 中最新记录；按 `docs/06-implementation-roadmap.md` 从 Phase 0 开始，只做验证通过后允许的下一阶段。
+> 继续 `Jacky-Lau1/model-routing` Draft PR #1，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S0。先读 docs/14、docs/16、docs/17、docs/08 和最新 logs，确认范围后再写文件。
 
 在 GitHub 网页链接可用后，也可以直接提供仓库 URL。任何实施前都应重新核验上游 Codex 文档、模型价格、提供商 API 兼容性与当前版本限制。
 
@@ -75,12 +68,14 @@ logs/       决策、验证、事件、成本基线的长期维护入口
 
 ## 成功定义
 
-一次未来的实现只有在以下条件都满足后，才可以称为“自动路由已可用”：
+只有在 S0–S9 全部通过后，才可以申请有限真实 Pilot。只有规定的 S10 真实验证完成后，才可以讨论“自动路由可用”。最低条件包括：
 
 - 路由日志可证明每次执行实际使用的提供商和模型；
 - 不可路由时 100% 明确失败或升级，零静默 Sol 回退；
 - 执行模型只得到最小任务包，而不是未经筛选的完整对话；
-- 每次变更都经过本地质量门与定义好的 Sol 审查；
+- DeepSeek 只在隔离 worktree 和真实 capability 边界内工作，主 workspace 在最终 apply 前不变；
+- 每次变更都经过本地质量门与当前 GPT 主会话的最终审查；
+- endpoint、auth、model、protocol、scope 和 attempt 状态均有可核对证据；
 - 在固定基准任务集上，质量不低于 Sol 基线，且成本收益可量化；
 - 维护日志、版本决策和回滚方式都已存在。
 

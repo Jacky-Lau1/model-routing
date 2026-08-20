@@ -6,6 +6,11 @@
 
 ### Added
 
+- Orchestrator-first 最终实施计划：S0–S10 阶段门、双层状态、RouteBinding、worktree、安全执行器、EvidenceBundle、GPT 前台和 Pilot。
+- 分阶段新对话交接文档，包含每阶段可复制 Prompt、依赖、测试和维护要求。
+- 18 项可评估 TODO，记录当前默认、替代方案、风险、所需证据和改变条件。
+- ADR-005 至 ADR-011，固定 provider 切换退役、双维隐私、ambiguous 调用、分层 binding、MCP 接入和 Direct Adapter 方向。
+
 - TypeScript 确定性路由、审批哈希、状态机和低写入检查点。
 - Codex ephemeral、DeepSeek Responses 与本地验证适配器。
 - Microsoft Store Codex CLI 安装同步脚本与隔离的 Router Home。
@@ -14,6 +19,17 @@
 - DeepSeek Responses 原生 Codex Flash/Pro profiles，使用 DPAPI 命令式认证。
 - `route auto/approve/revise/status/resume/abort/benchmark/live-benchmark/cleanup` CLI。
 - 离线路由、审批失效、持久化和端到端状态测试。
+
+### Changed
+
+- 项目主路线从 Desktop/native provider 切换收敛为 Orchestrator-first：GPT 常驻前台，DeepSeek 只做后台受控执行。
+- README 和 Roadmap 改为以 `docs/16` 的 S0–S10 为当前执行基线。
+- 明确 worktree 只是变更隔离边界，真实权限安全还需要 capability/sandbox。
+- 明确不能绝对保证供应商未重复计费；未知发送结果进入 `AMBIGUOUS/BLOCKED`。
+
+### Deprecated
+
+- Desktop provider hot switch、native DeepSeek menu/profile 和 Restore OpenAI 作为默认方案。代码退役将在 S0 实施；当前不要作为正常入口使用。
 
 ## [0.1.0] - 2026-08-11
 

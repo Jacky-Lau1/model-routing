@@ -1,5 +1,7 @@
 # 混合模型路由测评方案（暂不执行）
 
+> 本文保留原 Pilot-30 指标和任务设计。Orchestrator-first 的执行前置条件、两条首轮 baseline、ambiguous call 指标和停止条件以 `docs/16-orchestrator-first-implementation-plan.md` 的 S9/S10 为准。S0–S9 未全部通过且用户未在当次会话明确说“运行”前，不执行真实测评。
+
 ## 目标与对照组
 
 首轮采用可控的小样本 Pilot-30：6 个任务、5 套配置、每项 1 次，共 30 次运行。全部通过后再把每项重复 3 次，用于估计稳定性。五套配置为：全程 Sol、全程 Terra、全程 DeepSeek Flash、当前 Auto 路由、Auto 路由但复杂执行强制 DeepSeek Pro。每个配置使用相同任务、工具、文件范围、超时和最大输出预算，运行顺序随机化。

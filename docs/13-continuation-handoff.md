@@ -1,5 +1,7 @@
 # 13｜继续研发交接（2026-08-20）
 
+> 已被后续交接替代：本文保留 native menu 故障前的历史上下文，其中“先验证原生菜单”和相关安装建议不再执行。当前基线见 `docs/14-orchestrator-first-proposal.md`、`docs/16-orchestrator-first-implementation-plan.md` 和 `docs/17-orchestrator-first-stage-handoffs.md`。
+
 这是一份给后续 Codex 对话使用的简明交接记录。它描述当前仓库状态和安全边界，不包含 API Key、真实用户路径、设备标识或本机配置内容。
 
 ## 当前状态
