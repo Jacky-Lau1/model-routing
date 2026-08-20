@@ -24,6 +24,7 @@
 - [现成项目参考](docs/09-reference-projects.md)
 - [未来实施交接说明](docs/10-future-implementation-brief.md)
 - [最小实现与 CLI](docs/11-implementation.md)
+- [继续研发交接](docs/13-continuation-handoff.md)
 
 ## 本地运行
 
@@ -56,7 +57,7 @@ pnpm run route auto "修复一个局部 TypeScript bug" --project C:\path\to\pro
 
 ## 建议的未来入口
 
-当准备实施时，对 Codex 说：
+当准备继续研发时，可直接使用 [新对话继续研发 Prompt](prompts/continue-model-routing.md)；也可以对 Codex 说：
 
 > 访问 `Jacky-Lau1/模型路由`，先阅读 `docs/10-future-implementation-brief.md`、`docs/08-decisions.md` 和 `logs/` 中最新记录；按 `docs/06-implementation-roadmap.md` 从 Phase 0 开始，只做验证通过后允许的下一阶段。
 
