@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "approval_id": "DEMO-APPROVAL-S1-001",
+  "task_id": "DEMO-S1-001",
+  "task_package_hash": "c1bad94ad0446beb0486939faee8282463262cb9feae7cab708ffa764a9a4d94",
+  "route_binding_hash": "07093de91e0ca0295c3d1e12eb153689516f9830239a4b82c9aac562bacab3da",
+  "execution_context_hash": "a02d2f09a58008edba5cf34d5997b7734138e07ea31a63f4ece384d84af4e4c7",
+  "policy_hash": "b1890992acda18c0792f7523d4cf4d15a817d1df8efddfb4e4e82d9233334394",
+  "approved_scope_summary": "deepseek: read 1, write 1",
+  "approved_at": "2026-08-21T00:00:00.000Z",
+  "expires_at": null,
+  "approval_hash": "6a9c8b0310ba9aa1448000a4261f5c7bec8f24b38e7e834bf68954bd81cc3ce3"
+}

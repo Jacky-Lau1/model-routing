@@ -95,3 +95,13 @@
 - 决策：按 `docs/16` TODO-07 当前默认，保留 native provider switch 与 DeepSeek profile 安装代码，但移入 `scripts/deprecated-experimental/native-codex/`。默认安装器、Router Terminal、CLI help 和快捷方式不得引用它们，也不提供 Restore OpenAI。
 - 原因：这些脚本仍可用于协议兼容性考古，但会改写共享 Codex 配置或 profile/catalog，误用风险高；现阶段直接删除会丢失已知故障的可复现材料。
 - 后果：实验脚本不进入正常测试和支持路径；只做 PowerShell 语法解析，不执行。Direct Adapter 完成必要协议验证且不再有复现价值后，按 TODO-07 删除。
+
+## ADR-013：S1 合同使用严格 snake_case 线协议和规范化哈希
+
+- 日期：2026-08-21
+- 状态：接受
+- 决策：TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle、UserPolicy 和 ProjectPolicy 使用独立的 snake_case 线协议；对象拒绝未知字段，并以 locale 无关的 UTF-16 code-unit 键顺序、保留数组顺序的规范化 JSON 计算 SHA-256。自身 hash 字段不参加自身哈希。
+- 原因：现有 `PlanPacket + RouteDecision + allowedFiles` 混合了任务、路由、权限和预算，且旧 canonical 使用 locale 排序，无法给跨组件审批提供足够稳定、完整的绑定。
+- 隐私后果：未分类、无显式 user egress allow、过期授权和 `secret_restricted` 均不能构造 DeepSeek binding；`PRIVATE_THIRD_PARTY_ALLOWED` 只能作为便利输入规范化为 private + 独立 allow policy。
+- Policy 后果：project policy 只做 user policy 的 scope/egress 交集和更低预算；user deny 不能被仓库 policy 覆盖。无法保守证明 glob 子集时失败关闭。
+- 兼容后果：Phase 0 `PlanPacket`、`RouteDecision`、`LegacyApprovalRecord` 和 provider 调用暂不迁移；S1 不改变真实执行路径，后续阶段必须显式接入新合同。

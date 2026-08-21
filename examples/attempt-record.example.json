@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "attempt_id": "DEMO-ATTEMPT-S1-001",
+  "run_id": "DEMO-RUN-S1-001",
+  "stage": "EXECUTE",
+  "round": 0,
+  "request_fingerprint": "46c0f23bb3f2166baac9dccc76fcbc67b3cbad901db0e9ca01992fbd742d2425",
+  "status": "PREPARED",
+  "prepared_at": "2026-08-21T00:00:00.000Z",
+  "send_started_at": null,
+  "completed_at": null,
+  "failure_class": "none",
+  "provider_request_id": null,
+  "response_model": null,
+  "response_origin": null,
+  "usage": null,
+  "redacted_error": null
+}

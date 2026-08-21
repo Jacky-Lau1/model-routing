@@ -1,16 +1,20 @@
 {
-  "task_id": "DEMO-001",
-  "parent_summary": "演示用任务，不对应真实项目或真实文件。",
-  "objective": "为指定函数补充空输入处理和单元测试。",
-  "allowed_files": ["src/example.ts", "tests/example.test.ts"],
-  "constraints": ["不得修改公开接口", "不得新增依赖", "不要改任务白名单外的文件"],
-  "code_context": [
-    {"path": "src/example.ts", "summary": "函数接受字符串并返回规范化结果。"}
-  ],
-  "acceptance": {
-    "commands": ["<project-test-command>"],
-    "definition_of_done": ["空输入行为被覆盖", "现有测试不回归", "只改白名单文件"]
-  },
-  "stop_conditions": ["需求与现有行为冲突", "需要改公开接口", "测试连续两次失败"],
-  "budget": {"max_attempts": 2, "max_input_tokens": 12000, "max_output_tokens": 4000}
+  "version": 1,
+  "task_id": "DEMO-S1-001",
+  "goal": "Update a synthetic parser fixture.",
+  "background_summary": "Synthetic public fixture; no real configuration or credential data.",
+  "acceptance_criteria": ["Synthetic checks pass"],
+  "non_goals": ["No network calls"],
+  "forbidden_actions": ["Do not read outside the declared scope"],
+  "read_scope": ["src/example.ts", "tests/example.test.ts"],
+  "write_scope": ["src/example.ts", "tests/example.test.ts"],
+  "relevant_interfaces": ["parse(value: string): string"],
+  "context_manifest": [{ "path": "src/example.ts", "kind": "file", "selector": null, "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "source": "synthetic_fixture", "byte_length": 32, "summary": "Synthetic parser fixture." }],
+  "validation_requirements": ["synthetic-typecheck"],
+  "stop_conditions": ["Requested scope changes"],
+  "data_classification": "public",
+  "egress_policy": { "mode": "allow", "providers": ["deepseek"], "paths": ["src/example.ts", "tests/example.test.ts"], "content_hashes": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"], "authorization_id": "synthetic-user-approval", "authorized_by": "user", "authorized_at": "2026-08-21T00:00:00.000Z", "expires_at": null },
+  "request_budget": { "max_input_tokens": 4000, "max_output_tokens": 1000, "max_tool_calls": 2, "max_wall_time_ms": 30000, "max_estimated_cost_usd": 0.25, "billing_mode": "prepaid" },
+  "created_at": "2026-08-21T00:00:00.000Z",
+  "task_package_hash": "c1bad94ad0446beb0486939faee8282463262cb9feae7cab708ffa764a9a4d94"
 }

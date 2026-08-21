@@ -44,7 +44,7 @@ DeepSeek 官方 V4 思考模式只提供关闭、`high` 和 `max`；`low/medium`
 
 ## 安全限制
 
-- `allowedFiles` 是模型约束和审批内容；Phase 0 尚需通过真实 diff 监控验证越界率。
+- `allowedFiles` 仅是 Phase 0 兼容字段。S1 新合同必须使用独立 `read_scope` / `write_scope`，并把二者、policy 和预算全部绑定到审批；旧 Orchestrator 接线留待后续阶段按边界迁移。
 - 本地验证命令来自经用户批准的计划，但仍只应对可信项目运行。
 - 不提交 `.env`、API key、完整对话或 reasoning 内容。
 - 上游模型、API 或 Codex CLI 能力改变后，模型状态应回退到待认证。

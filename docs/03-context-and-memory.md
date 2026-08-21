@@ -4,7 +4,7 @@
 
 ## 任务包
 
-执行者只接收下列字段：目标、允许修改文件、禁止项、相关代码摘要/接口、验收命令、完成定义、预算、停止条件、当前任务 ID 与父任务摘要。格式见 [task-packet.schema.json](../config/task-packet.schema.json) 和 [示例](../examples/task-packet.example.json)。
+执行者只接收下列字段：目标、独立 read/write scope、禁止项、相关代码摘要/接口、验收要求、预算、停止条件、数据分类、外发授权、当前任务 ID 与最小背景摘要。S1 规范见 [数据合同说明](18-s1-data-contracts.md)、[TaskPackage schema](../config/task-package.schema.json) 和 [合成示例](../examples/task-package.example.json)。
 
 不传递：完整高层推理、无关历史、密钥、原始用户敏感信息、未验证的中间猜测。
 

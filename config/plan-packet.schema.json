@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Approved Router Plan Packet",
+  "title": "Legacy Phase 0 Approved Router Plan Packet",
+  "$comment": "S1 integrations must use TaskPackage + RouteBinding + ExecutionContext + ApprovalRecord. This schema remains for the unmigrated Phase 0 orchestrator only.",
   "type": "object",
   "required": ["version", "taskId", "objective", "nonGoals", "steps", "allowedFiles", "constraints", "acceptance", "validationCommands", "route"],
   "properties": {

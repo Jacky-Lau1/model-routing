@@ -6,6 +6,10 @@
 
 ### Added
 
+- S1 `TaskPackage`、`RouteBinding`、`ExecutionContext`、`ApprovalRecord`、`AttemptRecord` 和 `EvidenceBundle` 独立线协议类型。
+- 规范化 JSON 序列化、稳定 SHA-256、严格运行时解析器、独立 JSON Schema 入口和 hash-valid 合成示例。
+- `data_classification + egress_policy` 双维隐私、user/project policy 交集和 DeepSeek binding 默认拒绝规则。
+- S1 合同/schema 合成测试，覆盖字段顺序、审批失效、未知字段、危险路径、secret-like context 和 policy 收窄。
 - S0 默认快捷方式安装器的 `-DryRun`、临时目录和 mock shortcut backend 回归测试。
 - deprecated experimental native Codex 区域及其风险说明。
 - Orchestrator-first 最终实施计划：S0–S10 阶段门、双层状态、RouteBinding、worktree、安全执行器、EvidenceBundle、GPT 前台和 Pilot。
@@ -24,6 +28,8 @@
 
 ### Changed
 
+- read scope 与 write scope 在 S1 合同中彻底分离；旧 `allowedFiles` 只作为 Phase 0 兼容字段保留。
+- `task-packet.schema.json` 和 `run-report.schema.json` 降为新 TaskPackage/EvidenceBundle schema 的兼容别名。
 - S0 默认安装、Router Terminal、CLI help 和快捷方式只宣传 Orchestrator；`live-benchmark` 仍仅保留为显式命令。
 - native provider switch 与 DeepSeek profile 安装脚本移至 `scripts/deprecated-experimental/native-codex/`，不再位于默认脚本区或默认调用链。
 - 项目主路线从 Desktop/native provider 切换收敛为 Orchestrator-first：GPT 常驻前台，DeepSeek 只做后台受控执行。

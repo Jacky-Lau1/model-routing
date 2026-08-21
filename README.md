@@ -2,7 +2,7 @@
 
 > 面向 Codex Desktop 的“强模型规划与验收 + 低成本模型受控执行”方案档案库。
 
-**状态：Orchestrator-first S0 已完成；S1-S9 尚未实施。** 默认安装、CLI、终端和快捷方式现在只暴露 Orchestrator，不再安装或调用 Desktop provider switch、native DeepSeek profile 或 Restore OpenAI。仓库已有的 TypeScript 控制层仍处于整改前 Phase 0/1；worktree 隔离、真实权限边界、完整 RouteBinding、ambiguous paid-call 语义、EvidenceBundle 和 GPT 前台接入仍待后续阶段完成。在 S0-S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
+**状态：Orchestrator-first S0–S1 已完成；S2–S9 尚未实施。** 默认入口只暴露 Orchestrator；S1 已冻结 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 与双层 policy 的严格合同、规范化哈希和 JSON Schema。现有 provider 执行链仍是整改前 Phase 0/1，尚未接入这些新合同；worktree、真实权限边界、attempt 持久化、route preflight、质量门和 GPT 前台仍待后续阶段完成。在 S0–S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
 
 ## 目标
 
@@ -30,6 +30,7 @@
 - [迁移背景与问题诊断](docs/15-orchestrator-first-handoff.md)
 - [最终实施计划、阶段门与 TODO](docs/16-orchestrator-first-implementation-plan.md)
 - [分阶段新对话交接与 Prompt](docs/17-orchestrator-first-stage-handoffs.md)
+- [S1 数据合同、隐私与 Schema](docs/18-s1-data-contracts.md)
 
 ## 当前入口与运行警告
 
@@ -47,12 +48,13 @@
 6. DeepSeek 不直接写主 working tree；worktree 只提供变更隔离，真实安全还依赖 capability/sandbox。
 7. 未分类数据默认禁止第三方；私有数据外发必须绑定 provider、任务、路径/内容和审批。
 8. LLM 调用状态不明时进入 `AMBIGUOUS/BLOCKED`，不自动重发可能计费的请求。
+9. 新跨组件对象必须通过 S1 严格 schema 与规范化哈希；Phase 0 `allowedFiles`/旧审批只作为尚未迁移的兼容层。
 
 ## 继续实施
 
-实施已拆成一个阶段一个新对话。S0 阶段门通过后，下一阶段是 S1 合同、隐私与 schema。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。[继续研发 Prompt](prompts/continue-model-routing.md) 提供当前 S1 简版入口。
+实施已拆成一个阶段一个新对话。S0、S1 阶段门通过后，下一阶段是 S2 Workflow/Attempt 持久化与幂等语义。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。
 
-> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S1。先确认 S0 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/08 和最新 logs。
+> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S2。先确认 S1 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/18、docs/08 和最新 logs。
 
 在 GitHub 网页链接可用后，也可以直接提供仓库 URL。任何实施前都应重新核验上游 Codex 文档、模型价格、提供商 API 兼容性与当前版本限制。
 

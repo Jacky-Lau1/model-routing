@@ -40,3 +40,13 @@
 - 删除条件：Direct Adapter 完成所需协议验证，且这些脚本不再提供可复现价值。
 - 验证：临时目录、mock shortcut backend、dry-run、PowerShell parser、CLI/Terminal help、TypeScript typecheck 和 28 个离线测试通过；未运行 API、benchmark 或安装。
 - 当前状态：S0 阶段门通过；S1 可开始。
+
+## 2026-08-21｜S1 冻结合同、隐私与 schema
+
+- 决策：六类跨组件对象使用独立 snake_case 线协议；RouteBinding 不内嵌 approval hash，base/workspace evidence 只进入 ExecutionContext。
+- Hash：对象键使用 locale 无关的 UTF-16 code-unit 顺序，数组保序，拒绝无法规范化的值，自身 hash 字段不参加自身哈希。
+- 隐私：底层只持久化 `data_classification + egress_policy`；未分类、无 user allow、授权过期和 `secret_restricted` 禁止 DeepSeek。便利输入 `PRIVATE_THIRD_PARTY_ALLOWED` 立即拆成 private + provider/path/content-hash allow。
+- Policy：project policy 只能提交 user scope 的子集、更低或相同预算和 egress 交集；user deny 永远优先。无法证明 glob 收窄时失败关闭。
+- 兼容：旧 PlanPacket/RouteDecision/allowedFiles/provider invoke 不在 S1 迁移，避免提前实施 S2–S5；新合同尚未连接真实执行链。
+- 验证：TypeScript `--noEmit` 与 42/42 离线测试通过；JSON Schema 和 hash-valid examples 只含合成数据，未读取 env/config/credential，未调用 API。
+- 当前状态：S1 阶段门通过；S2 可开始。
