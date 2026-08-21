@@ -9,6 +9,8 @@ describe("state machine", () => {
   it("rejects invalid terminal transitions", () => expect(() => assertLegacyTransition("COMPLETED", "EXECUTING")).toThrow());
   it("keeps attempt lifecycle out of the workflow state machine", () => {
     expect(canTransition("APPROVED", "EXECUTING")).toBe(true);
+    expect(canTransition("APPROVED", "WORKTREE_READY")).toBe(true);
+    expect(canTransition("WORKTREE_READY", "EXECUTING")).toBe(true);
     expect(canTransition("EXECUTING", "BLOCKED")).toBe(true);
     expect(() => assertTransition("PASSED", "EXECUTING")).toThrow();
   });

@@ -182,6 +182,25 @@ export class DurableAttemptExecutor {
     return this.persistence.saveWorkflow({ ...workflow, approval_hash: approvalHash, state: "APPROVED", revision: workflow.revision + 1, updated_at: this.timestamp() });
   }
 
+  tryAcquireWorktreeHandoffLock(taskId: string, approvalHash: string): Promise<(() => Promise<void>) | undefined> {
+    return this.persistence.tryAcquireWorktreeHandoffLock(taskId, approvalHash);
+  }
+
+  async markWorktreeReady(taskId: string, runId: string, approvalHash: string): Promise<WorkflowRecord> {
+    const workflow = await this.persistence.loadWorkflow(taskId);
+    this.assertWorkflowBinding(workflow, runId, approvalHash);
+    if (["WORKTREE_READY", "EXECUTING", "VALIDATING", "REVIEW_PENDING", "REPAIR_REQUIRED", "APPLY_PENDING", "PASSED"].includes(workflow.state)) return workflow;
+    if (workflow.state !== "APPROVED") throw new ExecutionConflictError("Workflow is not approved for worktree preparation");
+    return this.transitionWorkflow(workflow, "WORKTREE_READY", workflow.active_attempt_id, null);
+  }
+
+  async blockLocalFailure(taskId: string, runId: string, approvalHash: string, reason: unknown): Promise<WorkflowRecord> {
+    const workflow = await this.persistence.loadWorkflow(taskId);
+    this.assertWorkflowBinding(workflow, runId, approvalHash);
+    if (workflow.state === "BLOCKED") return workflow;
+    return this.transitionWorkflow(workflow, "BLOCKED", workflow.active_attempt_id, redactError(reason));
+  }
+
   /** Startup recovery never sends. Any durable SENDING attempt becomes AMBIGUOUS/BLOCKED. */
   async recover(taskId: string): Promise<{ workflow?: WorkflowRecord; attempts: AttemptRecord[] }> {
     let workflow = await this.persistence.tryLoadWorkflow(taskId);
@@ -223,6 +242,10 @@ export class DurableAttemptExecutor {
       created_at: now,
       updated_at: now,
     });
+  }
+
+  private assertWorkflowBinding(workflow: WorkflowRecord, runId: string, approvalHash: string): void {
+    if (workflow.run_id !== runId || workflow.approval_hash !== approvalHash) throw new ExecutionConflictError("Workflow is bound to a different run or approval");
   }
 
   private async attachAttempt(workflow: WorkflowRecord, attemptId: string, start: WorkflowState): Promise<WorkflowRecord> {

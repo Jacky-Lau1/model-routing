@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -46,5 +46,33 @@ describe("atomic and redacted attempt persistence", () => {
     expect(failed.redacted_error).not.toContain("C:\\Users");
     expect(await readFile(store.attemptPath("task-1", "attempt-1"), "utf8")).not.toContain("hunter22");
     await expect(store.loadWorkflow("missing-task")).rejects.toMatchObject({ message: "Persistence failed during workflow read" });
+  });
+
+  it("provides an owned cross-instance worktree handoff lock and reclaims a dead synthetic owner", async () => {
+    const root = await rootFixture(); const first = new AttemptPersistence(root); const second = new AttemptPersistence(root); const approval = stableHash("handoff");
+    const release = await first.tryAcquireWorktreeHandoffLock("task-1", approval); expect(release).toBeTypeOf("function");
+    expect(await second.tryAcquireWorktreeHandoffLock("task-1", approval)).toBeUndefined();
+    await release?.();
+    const lock = path.join(second.taskDir("task-1"), ".locks", `worktree-${approval}`); await mkdir(lock, { recursive: true });
+    await writeFile(path.join(lock, "owner.json"), `${JSON.stringify({ version: 1, approval_hash: approval, pid: 2147483647, nonce: "00000000-0000-4000-8000-000000000000", created_at: now })}\n`);
+    const recovered = await second.tryAcquireWorktreeHandoffLock("task-1", approval); expect(recovered).toBeTypeOf("function"); await recovered?.();
+    await expect(access(lock)).rejects.toThrow();
+  });
+
+  it("allows a contender only after release atomically renames the active lock", async () => {
+    const root = await rootFixture(); const approval = stableHash("release-race");
+    let renamed!: () => void; const releaseRenamed = new Promise<void>(resolve => { renamed = resolve; });
+    let continueCleanup!: () => void; const cleanupGate = new Promise<void>(resolve => { continueCleanup = resolve; });
+    const holder = new AttemptPersistence(root, { observeWorktreeLock: async () => { renamed(); await cleanupGate; } }); const contender = new AttemptPersistence(root);
+    const releaseHolder = await holder.tryAcquireWorktreeHandoffLock("task-1", approval); const releasing = releaseHolder?.(); await releaseRenamed;
+    const releaseContender = await contender.tryAcquireWorktreeHandoffLock("task-1", approval); expect(releaseContender).toBeTypeOf("function");
+    continueCleanup(); await releasing; await releaseContender?.();
+  });
+
+  it("recovers an ownerless empty active-lock directory left by a release crash", async () => {
+    const root = await rootFixture(); const store = new AttemptPersistence(root); const approval = stableHash("ownerless-release");
+    const lock = path.join(store.taskDir("task-1"), ".locks", `worktree-${approval}`); await mkdir(lock, { recursive: true });
+    const release = await store.tryAcquireWorktreeHandoffLock("task-1", approval); expect(release).toBeTypeOf("function"); await release?.();
+    await expect(access(lock)).rejects.toThrow();
   });
 });

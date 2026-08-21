@@ -16,6 +16,7 @@ export type AtomicWriteObserver = (event: { kind: RecordKind; phase: AtomicWrite
 
 export interface AttemptPersistenceOptions {
   observeAtomicWrite?: AtomicWriteObserver;
+  observeWorktreeLock?: (phase: "release_renamed") => void | Promise<void>;
 }
 
 export class PersistenceError extends Error {
@@ -110,6 +111,73 @@ export class AttemptPersistence {
     };
   }
 
+  async tryAcquireWorktreeHandoffLock(taskId: string, approvalHash: string): Promise<(() => Promise<void>) | undefined> {
+    assertHash(approvalHash, "approval hash");
+    const locks = path.join(this.taskDir(taskId), ".locks");
+    const target = path.join(locks, `worktree-${approvalHash}`);
+    await mkdir(locks, { recursive: true }).catch(() => { throw new PersistenceError("worktree handoff lock preparation"); });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const nonce = randomUUID();
+      const temporary = path.join(locks, `.worktree-${approvalHash}.${nonce}.tmp`);
+      const owner: WorktreeLockOwner = { version: 1, approval_hash: approvalHash, pid: process.pid, nonce, created_at: new Date().toISOString() };
+      let moved = false;
+      try {
+        await mkdir(temporary);
+        const handle = await open(path.join(temporary, "owner.json"), "wx");
+        try { await handle.writeFile(`${JSON.stringify(owner)}\n`, "utf8"); await handle.sync(); } finally { await handle.close(); }
+        try { await rename(temporary, target); moved = true; }
+        catch {
+          let existing: WorktreeLockOwner;
+          try { existing = await readWorktreeLockOwner(target); }
+          catch {
+            const quarantine = path.join(locks, `.ownerless-worktree-${approvalHash}.${randomUUID()}.tmp`);
+            try { await rename(target, quarantine); }
+            catch (error) { if (isMissing(error)) continue; throw new PersistenceError("worktree handoff lock collision recovery"); }
+            const names = await readdir(quarantine).catch(() => { throw new PersistenceError("worktree handoff lock collision inspection"); });
+            if (names.length !== 0) {
+              await atomicRenameWithLocalRetry(quarantine, target).catch(() => { throw new PersistenceError("worktree handoff lock ownership restore"); });
+              throw new PersistenceError("worktree handoff lock ownership");
+            }
+            await rmdir(quarantine).catch(() => { throw new PersistenceError("ownerless worktree handoff lock cleanup"); });
+            continue;
+          }
+          if (existing.approval_hash !== approvalHash) throw new PersistenceError("worktree handoff lock ownership");
+          if (processIsAlive(existing.pid)) return undefined;
+          const quarantine = path.join(locks, `.stale-worktree-${approvalHash}.${randomUUID()}.tmp`);
+          try { await rename(target, quarantine); }
+          catch { continue; }
+          try { await unlinkOwnedLock(quarantine, existing); }
+          catch { throw new PersistenceError("stale worktree handoff lock cleanup"); }
+          continue;
+        }
+        let released = false; let releaseQuarantine: string | undefined;
+        return async () => {
+          if (!released) {
+            const actual = await readWorktreeLockOwner(target);
+            if (actual.approval_hash !== owner.approval_hash || actual.pid !== owner.pid || actual.nonce !== owner.nonce) throw new PersistenceError("worktree handoff lock ownership");
+            releaseQuarantine = path.join(locks, `.release-worktree-${approvalHash}.${randomUUID()}.tmp`);
+            try { await atomicRenameWithLocalRetry(target, releaseQuarantine); }
+            catch { throw new PersistenceError("worktree handoff lock release"); }
+            released = true;
+            await this.options.observeWorktreeLock?.("release_renamed");
+          }
+          if (!releaseQuarantine) return;
+          try { await unlinkOwnedLock(releaseQuarantine, owner); releaseQuarantine = undefined; }
+          catch { /* active lock path is already atomically released; quarantine cleanup is retryable */ }
+        };
+      } catch (error) {
+        if (error instanceof PersistenceError) throw error;
+        throw new PersistenceError("worktree handoff lock acquisition");
+      } finally {
+        if (!moved) {
+          await rm(path.join(temporary, "owner.json"), { force: true }).catch(() => undefined);
+          await rmdir(temporary).catch(() => undefined);
+        }
+      }
+    }
+    throw new PersistenceError("worktree handoff lock recovery");
+  }
+
   private async writeAtomic(target: string, value: unknown, kind: RecordKind): Promise<void> {
     const directory = path.dirname(target);
     const temporary = path.join(directory, `.${path.basename(target)}.${randomUUID()}.tmp`);
@@ -181,6 +249,26 @@ export function assertAttemptStateInvariant(attempt: AttemptRecord): void {
 }
 
 function assertDurableAttempt(value: unknown): asserts value is AttemptRecord { assertAttemptRecord(value); assertAttemptStateInvariant(value); }
+interface WorktreeLockOwner { version: 1; approval_hash: string; pid: number; nonce: string; created_at: string }
+async function readWorktreeLockOwner(directory: string): Promise<WorktreeLockOwner> {
+  try {
+    const value: unknown = JSON.parse(await readFile(path.join(directory, "owner.json"), "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid");
+    const owner = value as WorktreeLockOwner;
+    if (Object.keys(owner).length !== 5 || owner.version !== 1 || !HASH.test(owner.approval_hash) || !Number.isInteger(owner.pid) || owner.pid < 1 || !/^[a-f0-9-]{36}$/.test(owner.nonce) || Number.isNaN(Date.parse(owner.created_at))) throw new Error("invalid");
+    return owner;
+  } catch { throw new PersistenceError("worktree handoff lock owner read"); }
+}
+async function unlinkOwnedLock(directory: string, expected: WorktreeLockOwner): Promise<void> {
+  const actual = await readWorktreeLockOwner(directory);
+  if (actual.approval_hash !== expected.approval_hash || actual.pid !== expected.pid || actual.nonce !== expected.nonce) throw new PersistenceError("worktree handoff lock ownership");
+  await rm(path.join(directory, "owner.json"), { force: false });
+  await rmdir(directory);
+}
+function processIsAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return !["ESRCH", "EINVAL"].includes((error as NodeJS.ErrnoException).code ?? ""); }
+}
 function assertIdentifier(value: unknown, name: string): asserts value is string { if (typeof value !== "string" || !IDENTIFIER.test(value)) throw new Error(`Invalid ${name}`); }
 function assertHash(value: unknown, name: string): asserts value is string { if (typeof value !== "string" || !HASH.test(value)) throw new Error(`Invalid ${name}`); }
 function assertTimestamp(value: unknown, name: string): asserts value is string { if (typeof value !== "string" || Number.isNaN(Date.parse(value))) throw new Error(`Invalid ${name}`); }

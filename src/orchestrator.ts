@@ -12,6 +12,7 @@ import { decideRoute } from "./policy.js";
 import { redactError } from "./redaction.js";
 import { assertLegacyTransition, canLegacyTransition } from "./state-machine.js";
 import { assertAllowedChanges, snapshotWorkingTree } from "./scope-guard.js";
+import { GitWorktreeManager, type WorktreeLease } from "./worktree.js";
 import type { LegacyWorkflowState, PlanPacket, ProviderAdapter, ProviderRequest, ProviderResponse, RouteDecision, RunState, TaskProfile, UsageMetrics, WorkflowState } from "./types.js";
 
 export interface AutoOptions {
@@ -25,15 +26,21 @@ interface Review { verdict: "pass" | "repair" | "escalate"; findings?: string[];
 
 export class RouterOrchestrator {
   private readonly attempts: DurableAttemptExecutor;
+  private readonly worktrees: GitWorktreeManager;
 
   constructor(
     private readonly modelAdapter: ProviderAdapter,
     private readonly localAdapter: ProviderAdapter,
     readonly store = new StateStore(),
     attempts?: DurableAttemptExecutor,
-  ) { this.attempts = attempts ?? new DurableAttemptExecutor(new AttemptPersistence(this.store.root)); }
+    worktrees?: GitWorktreeManager,
+  ) {
+    this.attempts = attempts ?? new DurableAttemptExecutor(new AttemptPersistence(this.store.root));
+    this.worktrees = worktrees ?? new GitWorktreeManager({ stateRoot: this.store.root });
+  }
 
   async auto(objective: string, options: AutoOptions = {}): Promise<RunState> {
+    await this.worktrees.assertIsolationRoots(options.projectDirectory ?? process.cwd());
     const taskId = options.taskId ?? `task-${randomUUID().slice(0, 8)}`;
     const now = new Date().toISOString();
     const profile = classifyTask(objective, options.profile);
@@ -81,51 +88,66 @@ export class RouterOrchestrator {
   }
 
   async approve(taskId: string, projectDirectory = process.cwd()): Promise<RunState> {
+    await this.worktrees.assertIsolationRoots(projectDirectory);
     let state = await this.store.load(taskId);
     if (state.state !== "WAITING_APPROVAL" && state.state !== "WAITING_REAPPROVAL") return state;
     if (!state.plan) throw new Error("Task has no plan");
     const plan = state.plan;
-    state = { ...state, approval: approvePlan(plan) };
-    assertApproval(plan, state.approval);
-    const approvalHash = executionApprovalHash(plan);
-    await this.attempts.bindApproval(taskId, runIdFor(taskId), preApprovalHash(taskId), approvalHash);
-    state = move(state, "EXECUTING");
-    await this.store.save(state, true);
+    const runId = runIdFor(taskId);
+    let approvalHash: string | undefined;
+    let lease: WorktreeLease | undefined;
     try {
-      const scopeBefore = await snapshotWorkingTree(projectDirectory);
-      const execution = await this.invokeExecution(state, plan.route, projectDirectory, "Perform only the approved plan. Respect allowed files and stop conditions.");
+      const baseline = await this.worktrees.captureMainWorkspace(projectDirectory);
+      const binding = this.worktrees.createBinding(runId, stableHash(plan), baseline);
+      state = { ...state, approval: approvePlan(plan, binding.isolation_hash) };
+      assertApproval(plan, state.approval, binding.isolation_hash);
+      approvalHash = executionApprovalHash(plan, binding.isolation_hash);
+      const releaseHandoff = await this.attempts.tryAcquireWorktreeHandoffLock(taskId, approvalHash);
+      if (!releaseHandoff) return this.store.load(taskId);
+      try {
+        const approvalWorkflow = await this.attempts.bindApproval(taskId, runId, preApprovalHash(taskId), approvalHash);
+        if (!["APPROVED", "WORKTREE_READY"].includes(approvalWorkflow.state)) return this.store.load(taskId);
+        lease = await this.worktrees.prepare(projectDirectory, binding);
+        const worktreeWorkflow = await this.attempts.markWorktreeReady(taskId, runId, approvalHash);
+        if (worktreeWorkflow.state !== "WORKTREE_READY") return this.store.load(taskId);
+        state = move(state, "EXECUTING");
+        await this.store.save(state, true);
+      } finally { await releaseHandoff().catch(() => undefined); }
+      const isolatedDirectory = lease.checkout_directory;
+      const scopeBefore = await snapshotWorkingTree(isolatedDirectory);
+      const execution = await this.invokeExecution(state, plan.route, isolatedDirectory, "Perform only the approved plan. Respect allowed files and stop conditions.");
       if (!execution) return this.store.load(taskId);
-      const scopeAfter = await snapshotWorkingTree(projectDirectory);
-      try { assertAllowedChanges(scopeBefore, scopeAfter, plan.allowedFiles); }
-      catch (error) { state = { ...move(state, "BLOCKED"), lastError: redactError(error) }; await this.store.save(state, true); return state; }
+      const scopeAfter = await snapshotWorkingTree(isolatedDirectory);
+      assertAllowedChanges(scopeBefore, scopeAfter, plan.allowedFiles);
       state = addResponse({ ...state, attempts: state.attempts + 1, result: execution.text }, plan.route, execution);
       state = move(state, "VALIDATING"); await this.store.save(state);
-      let validation = await this.validate(state, projectDirectory);
+      let validation = await this.validate(state, isolatedDirectory);
       if (validation.response && validation.route) state = addResponse(state, validation.route, validation.response);
       if (!validation.passed) {
-        state = await this.repairOrDiagnose(state, projectDirectory, validation.text);
+        state = await this.repairOrDiagnose(state, isolatedDirectory, validation.text);
         if (state.state === "WAITING_REAPPROVAL" || state.state === "BLOCKED") return state;
-        validation = await this.validate(state, projectDirectory);
+        validation = await this.validate(state, isolatedDirectory);
         if (validation.response && validation.route) state = addResponse(state, validation.route, validation.response);
-        if (!validation.passed) return this.diagnose(state, projectDirectory, validation.text);
+        if (!validation.passed) return this.diagnose(state, isolatedDirectory, validation.text);
       }
       state = move(state, "REVIEWING"); await this.store.save(state);
-      const reviewResult = await this.review(state, projectDirectory, validation.text);
+      const reviewResult = await this.review(state, isolatedDirectory, validation.text);
       state = addResponse(state, reviewResult.route, reviewResult.response);
-      if (reviewResult.review.verdict === "pass") { state = { ...move(state, "COMPLETED"), result: reviewResult.review.finalText ?? reviewResult.review.summary ?? state.result }; await this.store.save(state, true); return state; }
+      if (reviewResult.review.verdict === "pass") { await this.worktrees.assertMainWorkspaceUnchanged(lease); await this.worktrees.retain(lease); state = { ...move(state, "COMPLETED"), result: reviewResult.review.finalText ?? reviewResult.review.summary ?? state.result }; await this.store.save(state, true); return state; }
       if (reviewResult.review.verdict === "repair" && state.repairAttempts === 0) {
-        state = await this.repairOrDiagnose(state, projectDirectory, JSON.stringify(reviewResult.review));
+        state = await this.repairOrDiagnose(state, isolatedDirectory, JSON.stringify(reviewResult.review));
         if (state.state === "WAITING_REAPPROVAL" || state.state === "BLOCKED") return state;
-        const repairedValidation = await this.validate(state, projectDirectory);
+        const repairedValidation = await this.validate(state, isolatedDirectory);
         if (repairedValidation.response && repairedValidation.route) state = addResponse(state, repairedValidation.route, repairedValidation.response);
-        if (!repairedValidation.passed) return this.diagnose(state, projectDirectory, repairedValidation.text);
+        if (!repairedValidation.passed) return this.diagnose(state, isolatedDirectory, repairedValidation.text);
         state = move(state, "REVIEWING");
-        const finalReview = await this.review(state, projectDirectory, repairedValidation.text);
+        const finalReview = await this.review(state, isolatedDirectory, repairedValidation.text);
         state = addResponse(state, finalReview.route, finalReview.response);
-        if (finalReview.review.verdict === "pass") { state = { ...move(state, "COMPLETED"), result: finalReview.review.finalText ?? finalReview.review.summary ?? state.result }; await this.store.save(state, true); return state; }
+        if (finalReview.review.verdict === "pass") { await this.worktrees.assertMainWorkspaceUnchanged(lease); await this.worktrees.retain(lease); state = { ...move(state, "COMPLETED"), result: finalReview.review.finalText ?? finalReview.review.summary ?? state.result }; await this.store.save(state, true); return state; }
       }
-      return this.diagnose(state, projectDirectory, JSON.stringify(reviewResult.review));
+      return this.diagnose(state, isolatedDirectory, JSON.stringify(reviewResult.review));
     } catch (error) {
+      if (approvalHash) await this.attempts.blockLocalFailure(taskId, runId, approvalHash, error).catch(() => undefined);
       const latest = await this.store.load(taskId).catch(() => state);
       if (latest.state === "BLOCKED" || !canLegacyTransition(latest.state, "BLOCKED")) return latest;
       const blocked = { ...move(latest, "BLOCKED"), lastError: redactError(error) };
@@ -138,13 +160,13 @@ export class RouterOrchestrator {
   }
 
   private async invokeExecution(state: RunState, route: RouteDecision, projectDirectory: string, instruction: string): Promise<ProviderResponse | undefined> {
-    if (!state.plan) throw new Error("Missing plan"); assertApproval(state.plan, state.approval);
+    if (!state.plan || !state.approval) throw new Error("Missing plan or approval"); assertApproval(state.plan, state.approval, state.approval.isolationHash);
     const prompt = buildPrompt(route.stage, instruction, "Return a concise execution summary and evidence.", JSON.stringify({ allowedFiles: state.plan.allowedFiles, constraints: state.plan.constraints }), JSON.stringify(state.plan), state.profile.sensitivity);
     const request = { stage: route.stage, route, ...prompt, sensitivity: state.profile.sensitivity, workingDirectory: projectDirectory, allowedFiles: state.plan.allowedFiles } satisfies ProviderRequest;
     const tracked = route.stage === "REPAIR" ? this.attempts.repair.bind(this.attempts) : this.attempts.execute.bind(this.attempts);
     return this.invokeTracked(state, this.modelAdapter, request, {
-      approvalHash: executionApprovalHash(state.plan), round: route.stage === "REPAIR" ? state.repairAttempts + 1 : 0,
-      initial: route.stage === "REPAIR" ? "REPAIR_REQUIRED" : "APPROVED", start: "EXECUTING", success: "VALIDATING", tracked,
+      approvalHash: executionApprovalHash(state.plan, state.approval.isolationHash), round: route.stage === "REPAIR" ? state.repairAttempts + 1 : 0,
+      initial: route.stage === "REPAIR" ? "REPAIR_REQUIRED" : "WORKTREE_READY", start: "EXECUTING", success: "VALIDATING", tracked,
     });
   }
 
@@ -155,7 +177,7 @@ export class RouterOrchestrator {
     const request = { stage: "VALIDATE" as const, route, stablePrefix: "", projectSummary: "", dynamicInput: commands.join("\n"), sensitivity: state.profile.sensitivity, workingDirectory: projectDirectory } satisfies ProviderRequest;
     let parsed: { passed: boolean } | undefined;
     const response = await this.invokeTracked(state, this.localAdapter, request, {
-      approvalHash: executionApprovalHash(state.plan!), round: state.repairAttempts,
+      approvalHash: executionApprovalHash(state.plan!, requiredIsolationHash(state)), round: state.repairAttempts,
       initial: "VALIDATING", start: "VALIDATING", success: "REVIEW_PENDING",
       validate: result => { parsed = JSON.parse(result.text) as { passed: boolean }; if (typeof parsed.passed !== "boolean") throw new Error("Validation response was incomplete"); },
     });
@@ -174,7 +196,7 @@ export class RouterOrchestrator {
     const request = { stage, route, ...prompt, sensitivity: state.profile.sensitivity, workingDirectory: projectDirectory } satisfies ProviderRequest;
     let review: Review | undefined;
     const response = await this.invokeTracked(state, this.modelAdapter, request, {
-      approvalHash: executionApprovalHash(state.plan), round: state.repairAttempts,
+      approvalHash: executionApprovalHash(state.plan, requiredIsolationHash(state)), round: state.repairAttempts,
       initial: "REVIEW_PENDING", start: "REVIEW_PENDING", success: "REVIEW_PENDING",
       validate: result => { review = parseJson<Review>(result.text); validateReview(review); },
     });
@@ -191,8 +213,7 @@ export class RouterOrchestrator {
     const repaired = await this.invokeExecution(state, route, projectDirectory, `Repair once using this evidence:\n${evidenceText}`);
     if (!repaired) return this.store.load(state.taskId);
     const scopeAfter = await snapshotWorkingTree(projectDirectory);
-    try { assertAllowedChanges(scopeBefore, scopeAfter, plan.allowedFiles); }
-    catch (error) { state = { ...move(state, "BLOCKED"), lastError: error instanceof Error ? error.message : String(error) }; await this.store.save(state, true); return state; }
+    assertAllowedChanges(scopeBefore, scopeAfter, plan.allowedFiles);
     state = addResponse({ ...state, repairAttempts: 1, result: repaired.text }, route, repaired);
     state = move(state, "VALIDATING"); await this.store.save(state); return state;
   }
@@ -204,7 +225,7 @@ export class RouterOrchestrator {
     const request = { stage: "SOL_DIAGNOSIS" as const, route, ...prompt, sensitivity: state.profile.sensitivity, workingDirectory: projectDirectory } satisfies ProviderRequest;
     const workflow = (await this.attempts.status(state.taskId)).workflow;
     const response = await this.invokeTracked(state, this.modelAdapter, request, {
-      approvalHash: executionApprovalHash(state.plan!), round: state.repairAttempts,
+      approvalHash: executionApprovalHash(state.plan!, requiredIsolationHash(state)), round: state.repairAttempts,
       initial: workflow?.state ?? "REVIEW_PENDING", start: workflow?.state ?? "REVIEW_PENDING", success: "BLOCKED",
       validate: result => { const diagnosis = parseJson<DraftPlan>(result.text); validateDraftPlan(diagnosis); },
     });
@@ -257,7 +278,8 @@ function mergeUsage(a: UsageMetrics | undefined, b: UsageMetrics): UsageMetrics 
 function projectSummary(directory?: string): string { return JSON.stringify({ platform: process.platform, project: path.basename(directory ?? process.cwd()), sensitivePathsExcluded: true }); }
 function runIdFor(taskId: string): string { return `run-${stableHash(taskId).slice(0, 24)}`; }
 function preApprovalHash(taskId: string): string { return stableHash({ task_id: taskId, authority: "preapproval-planning" }); }
-function executionApprovalHash(plan: PlanPacket): string { return stableHash({ task_id: plan.taskId, plan_hash: stableHash(plan), route: plan.route }); }
+function executionApprovalHash(plan: PlanPacket, isolationHash: string): string { return stableHash({ task_id: plan.taskId, plan_hash: stableHash(plan), route: plan.route, isolation_hash: isolationHash }); }
+function requiredIsolationHash(state: RunState): string { if (!state.approval?.isolationHash) throw new Error("Missing approved isolation binding"); return state.approval.isolationHash; }
 function providerRequestFingerprint(request: ProviderRequest): string { return stableHash({
   stage: request.stage, route: request.route, stable_prefix: request.stablePrefix, project_summary: request.projectSummary,
   dynamic_input: request.dynamicInput, sensitivity: request.sensitivity, allowed_files: request.allowedFiles ?? [], tools: request.tools ?? [],

@@ -1,4 +1,5 @@
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { atomicRenameWithLocalRetry, PersistenceError } from "./attempt-persistence.js";
@@ -8,7 +9,7 @@ import type { LegacyWorkflowState, RunState } from "./types.js";
 
 export class StateStore {
   readonly root: string;
-  constructor(root = path.resolve(".router-state")) { this.root = root; }
+  constructor(root = path.join(os.tmpdir(), "codex-model-router-state")) { this.root = path.resolve(root); }
 
   taskDir(taskId: string): string {
     if (!/^[a-zA-Z0-9_-]+$/.test(taskId)) throw new Error("Invalid task id");

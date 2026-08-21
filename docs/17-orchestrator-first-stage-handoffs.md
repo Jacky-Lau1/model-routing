@@ -2,7 +2,7 @@
 
 > 用途：用户计划为每个实施阶段开启一个新的 Codex 主会话。本文提供共同上下文、阶段依赖、每阶段可直接复制的启动 Prompt 和结束交接要求。
 >
-> 状态：S0、S1、S2 已于 2026-08-21 通过；S3 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
+> 状态：S0、S1、S2、S3 已于 2026-08-21 通过；S4 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
 
 ## 一、所有新会话先读
 
@@ -13,11 +13,12 @@
 3. 本文
 4. 已完成 S1 后读取 `docs/18-s1-data-contracts.md`
 5. 已完成 S2 后读取 `docs/19-s2-attempt-persistence.md`
-6. `docs/08-decisions.md`
-7. `CHANGELOG.md`
-8. `logs/decision-log.md`
-9. `logs/routing-validation-log.md`
-10. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
+6. 已完成 S3 后读取 `docs/20-s3-isolated-worktree.md`
+7. `docs/08-decisions.md`
+8. `CHANGELOG.md`
+9. `logs/decision-log.md`
+10. `logs/routing-validation-log.md`
+11. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
 
 共同目标体验：
 
@@ -92,8 +93,8 @@ S10 有限真实 Pilot
 | S0 | 已通过 | 2026-08-21：默认入口 Orchestrator-only；28/28 离线测试通过 | 保持退役边界，不回补 native switching |
 | S1 | 已通过 | 2026-08-21：六类合同、双维隐私、严格 schema；42/42 离线测试 | 保持合同边界，不在 provider 中临时绕过 |
 | S2 | 已通过 | 2026-08-21：双层状态、原子 checkpoint、幂等锁、crash recovery；67/67 离线测试 | 保持 AMBIGUOUS 禁止自动重发 |
-| S3 | 可开始 | S2 状态转换与 crash matrix 见 `docs/19` | 实施 isolated worktree |
-| S4 | 未开始 | Direct Adapter 仅部分受限 | S3 通过后开始 |
+| S3 | 已通过 | 2026-08-21：run-scoped detached worktree、dirty evidence、归属/恢复/冲突检测；116/116 离线测试 | 保持变更隔离，不误称 OS sandbox |
+| S4 | 可开始 | Direct Adapter 仍仅部分受限 | 实施 capability boundary |
 | S5 | 未开始 | endpoint mismatch 尚无 preflight | S4 通过后开始 |
 | S6 | 未开始 | 当前只有局部 scope/validation evidence | S5 通过后开始 |
 | S7 | 未开始 | 当前 foreground interface 未实现 | S6 通过后开始 |
@@ -167,7 +168,7 @@ S1 完成证据：`src/contracts.ts` 提供严格解析与规范化 hash；`conf
 完成后提供状态转换图、crash matrix、未解决恢复问题，更新日志和 docs/17。
 ```
 
-## 八、S3 新对话 Prompt：Isolated Git Worktree
+## 八、S3 新对话 Prompt：Isolated Git Worktree（已完成，历史保留）
 
 ```markdown
 继续 Draft PR #1。本会话只实施 docs/16 的 S3：每个 run 的隔离 Git worktree、base commit、dirty evidence、生命周期和 apply 前冲突检测。
@@ -178,6 +179,8 @@ S1 完成证据：`src/contracts.ts` 提供严格解析与规范化 hash；`conf
 
 测试 clean/dirty/untracked/rename/delete、创建中崩溃、主 workspace 并发变化、build 产物隔离、cleanup 归属校验。完成后证明主 workspace 在 executor/validation 期间零变化。
 ```
+
+S3 完成证据：`GitWorktreeManager` 从批准的完整 commit 创建 detached checkout，持久化逻辑生命周期和 owner evidence；legacy approval 绑定 isolation hash；filesystem handoff lock 覆盖 bind/prepare/`WORKTREE_READY`/legacy `EXECUTING`。当前 EXECUTE/VALIDATE/REVIEW/REPAIR/SOL_DIAGNOSIS 均使用同一隔离 checkout。clean/modified/added/untracked/renamed/deleted、创建/清理检查点恢复、同步并发审批、跨 Router 实例竞争、dead/ownerless lock 与 release 交错恢复、auto/approve pre-write root containment、READY residual、主目录漂移、build 产物隔离、dirty/unknown/junction cleanup 负例均在临时 synthetic repo 通过；TypeScript 与 Vitest 116/116 通过。未修改 S1 schema，未实现 dirty overlay、OS sandbox、force cleanup 或 S8 apply。详细规则见 `docs/20-s3-isolated-worktree.md`。
 
 ## 九、S4 新对话 Prompt：Safe Executor
 

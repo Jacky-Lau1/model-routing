@@ -60,3 +60,16 @@
 - 存储与隐私：临时文件 sync + rename；只对 Windows rename 共享冲突做有限本地重试。状态/error 统一脱敏，不持久化 response body/raw/reasoning 或用户绝对路径。
 - 兼容：未修改 S1 AttemptRecord 字段/schema；当前 Orchestrator adapter 调用已接入 S2 executor，未实现 worktree、MCP、endpoint/auth 强证明或真实 API。
 - 当前状态：S2 阶段门通过；S3 可开始。
+
+## 2026-08-21｜S3 isolated worktree、dirty evidence 与归属保护
+
+- 决策：每个批准执行使用 repository identity、完整 base commit、main workspace snapshot、dirty evidence、plan hash 和 run ID 派生 isolation hash 与逻辑 worktree ID；legacy approval/S2 approval hash 显式绑定该 isolation hash。
+- 基线：dirty evidence 使用 NUL-safe Git status 捕获 modified/added/deleted/renamed/untracked，相对路径稳定排序，现存文件按原始字节计算 SHA-256。rename 在线 evidence 记录 destination，内部 snapshot 同时绑定 original path；dirty 内容不自动 overlay。
+- 生命周期：默认 state/managed roots 外置且不得位于目标 repo/common Git dir 内或彼此重叠；`PREPARING` 在 `git worktree add --detach` 前落盘；owner record、owned root、common Git dir、linked `.git`、完整 HEAD、detached 与 clean status 全部匹配后才进入 `READY`。三个创建检查点中断均可在证据匹配时幂等恢复；不完整、dirty、attached 或冲突证据进入 `BLOCKED` 并保留。
+- 接入：当前 EXECUTE、VALIDATE、REVIEW、REPAIR、SOL_DIAGNOSIS 都接收同一个隔离 checkout；workflow 经 `APPROVED → WORKTREE_READY → EXECUTING`。完成前主 workspace snapshot 再验证，漂移则 BLOCKED。
+- cleanup：正常完成默认 `RETAINED`；只有显式、clean、owner/common-dir/base/路径均验证的 checkout 才使用非 force `git worktree remove`。dirty、unknown、partial、owner 篡改和 junction/symlink 替换均拒绝，不调用 stash、reset、prune、force remove 或递归删除未证明归属的目录。
+- cleanup：先持久化 `REMOVING`，仅非 force 移除 verified clean checkout，持久化 `REMOVED` 后才清理 owner sidecar；REMOVING/GIT_REMOVED/REMOVED 三个中断点均可恢复。
+- handoff：filesystem lock 绑定 approval/PID/nonce，覆盖 durable bind、prepare、`WORKTREE_READY` 与 legacy `EXECUTING` 持久化；live owner 竞争不进入 prepare，dead/ownerless owner 只在证据匹配时原子隔离回收；release 先原子移走 active target 再清理 quarantine。
+- 验证：TypeScript `--noEmit` 和 116/116 离线测试通过；覆盖 clean/dirty/untracked/rename/delete、base/ref、创建/清理中断、同步并发审批、跨 Router handoff、dead/ownerless/release-race recovery、auto/approve pre-write/junction root containment、READY residual、scope 双状态、同路径冲突、worktree `dist/` 隔离、cleanup ownership 和 Orchestrator 目录接入。全部为系统临时目录 synthetic repo 和 mock provider，未联网、未读真实 config/auth/DPAPI/env/credential，未运行 API/benchmark。
+- 边界：S1 六类合同/schema 未修改；worktree 不是 OS sandbox，S4 capability boundary 尚未实现；dirty overlay 仍为 TODO-02；S3 只提供 apply 前冲突 primitive，不执行 S8 apply。
+- 当前状态：S3 阶段门通过；S4 可开始。

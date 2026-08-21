@@ -9,7 +9,7 @@
 - 默认安装器不再创建 native DeepSeek、OpenAI Codex 或 Restore OpenAI 快捷方式。
 - native provider switch 与 profile 安装脚本已移到 `scripts/deprecated-experimental/native-codex/`，仅供协议兼容性考古，不受支持、不执行。
 - `route live-benchmark` 仍是显式命令；安装、默认检查和 S0-S9 测试不得触发。
-- TypeScript Orchestrator 主体仍是整改前 Phase 0/1。S1-S9 的合同、隐私、attempt、worktree、capability、route evidence、quality bundle 和 GPT 前台尚未完成。
+- 历史 S0 交接时，TypeScript Orchestrator 主体仍是整改前 Phase 0/1。当前 S1–S3 已完成；S4–S9 的 capability、route evidence、quality bundle、GPT 前台、apply 与 E2E 尚未完成，现状以 `docs/16` 和 `docs/17` 为准。
 
 ## S0 的默认入口
 
@@ -34,9 +34,9 @@ deprecated experimental 目录中的脚本可能下载外部内容、写 Codex p
 6. 不触碰或暂存 `dist/`、`node_modules/` 和无关用户文件。
 7. commit、push、PR 写操作分别需要当次明确授权。
 
-## 下一阶段
+## 历史下一阶段
 
-S1 只实施 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和 privacy/policy schema 基线。开始前先确认 S0 日志和阶段门仍通过，再使用 `docs/17` 的 S1 Prompt。S1 不运行真实 provider、不创建 worktree、不实现 MCP。
+本节保留 S0 完成时的交接语义：当时下一阶段是 S1，且只实施 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和 privacy/policy schema 基线。当前 S1–S3 已完成，下一阶段为 S4；不得再使用本节作为当前启动指令。
 
 ## 先读哪些文件
 

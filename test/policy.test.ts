@@ -41,4 +41,8 @@ describe("approval binding", () => {
     const approval = approvePlan(plan);
     expect(() => assertApproval({ ...plan, route: { ...plan.route, maxOutputTokens: 99 } }, approval)).toThrow(/invalidated/);
   });
+  it("invalidates approval after isolation binding change", () => {
+    const approval = approvePlan(plan, "a".repeat(64));
+    expect(() => assertApproval(plan, approval, "b".repeat(64))).toThrow(/isolation/);
+  });
 });

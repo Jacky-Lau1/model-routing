@@ -12,13 +12,15 @@ export function hashPlan(plan: PlanPacket): string {
   return stableHash(plan);
 }
 
-export function approvePlan(plan: PlanPacket, now = new Date()): LegacyApprovalRecord {
-  return { taskId: plan.taskId, planHash: hashPlan(plan), routeFingerprint: fingerprintRoute(plan.route), approvedAt: now.toISOString() };
+const LEGACY_NO_ISOLATION = stableHash({ isolation: "not-bound" });
+
+export function approvePlan(plan: PlanPacket, isolationHash = LEGACY_NO_ISOLATION, now = new Date()): LegacyApprovalRecord {
+  return { taskId: plan.taskId, planHash: hashPlan(plan), routeFingerprint: fingerprintRoute(plan.route), isolationHash, approvedAt: now.toISOString() };
 }
 
-export function assertApproval(plan: PlanPacket, approval?: LegacyApprovalRecord): void {
+export function assertApproval(plan: PlanPacket, approval?: LegacyApprovalRecord, isolationHash = LEGACY_NO_ISOLATION): void {
   if (!approval || approval.taskId !== plan.taskId) throw new Error("Execution requires approval for this task");
-  if (!hashesEqual(approval.planHash, hashPlan(plan)) || !hashesEqual(approval.routeFingerprint, fingerprintRoute(plan.route))) throw new Error("Approval invalidated by plan or route change");
+  if (!hashesEqual(approval.planHash, hashPlan(plan)) || !hashesEqual(approval.routeFingerprint, fingerprintRoute(plan.route)) || !hashesEqual(approval.isolationHash, isolationHash)) throw new Error("Approval invalidated by plan, route, or isolation change");
 }
 
 export interface ContractApprovalSubject {

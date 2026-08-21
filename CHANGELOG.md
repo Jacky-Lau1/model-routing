@@ -6,6 +6,11 @@
 
 ### Added
 
+- S3 `GitWorktreeManager`：批准 base commit、主 workspace dirty evidence/snapshot、run-scoped lifecycle、clean detached 创建恢复、归属验证、默认保留和带 `REMOVING` intent 的可恢复保守 cleanup。
+- 默认 Router state root 外置，并拒绝位于目标 repo/common Git dir 内或与 managed root 重叠的隔离根目录。
+- approval-to-worktree handoff 使用绑定 approval/PID/nonce 的 filesystem lock，覆盖 bind、prepare、`WORKTREE_READY` 与 legacy `EXECUTING` 持久化；归属匹配的 dead-owner、ownerless lock 可恢复，release 先原子移入 quarantine 再清理。
+- S3 synthetic Git repo 测试矩阵，覆盖 clean/modified/added/untracked/renamed/deleted、同步并发审批、创建/清理检查点中断、主目录漂移、scope 双状态、build 产物隔离、junction 篡改和 cleanup 负例。
+- S3 专项实现与交接文档 `docs/20-s3-isolated-worktree.md`。
 - S2 durable attempt executor：PREPARED/SENDING/SUCCEEDED 原子检查点、AMBIGUOUS/BLOCKED 恢复、task/approval 锁和稳定 attempt ID。
 - S2 crash/concurrency/provider-stage/atomic-write/redaction 离线测试矩阵，以及状态转换表和 crash matrix 文档。
 - S1 `TaskPackage`、`RouteBinding`、`ExecutionContext`、`ApprovalRecord`、`AttemptRecord` 和 `EvidenceBundle` 独立线协议类型。
@@ -30,6 +35,9 @@
 
 ### Changed
 
+- 当前 Orchestrator 的 EXECUTE/VALIDATE/REVIEW/REPAIR/SOL_DIAGNOSIS 工作目录统一为批准的 detached isolated worktree；主 workspace 仅用于捕获和复核基线。
+- legacy approval 与 S2 execution approval hash 增加 isolation hash 绑定，并在 provider attempt 前经过 `APPROVED → WORKTREE_READY → EXECUTING`。
+- worktree 证据不足、主 workspace snapshot 漂移、非 owned/dirty cleanup 均失败关闭并保留诊断区；不使用 force cleanup、自动 stash 或 reset。
 - 当前 Orchestrator 的 planning/execution/validation/review/repair/diagnosis adapter 调用统一接入 S2 attempt executor；重复或并发 approve 不再重复调用 provider。
 - provider 响应原文、reasoning、绝对用户路径和 credential-shaped 错误不再进入长期状态；持久化错误只暴露脱敏逻辑操作。
 - read scope 与 write scope 在 S1 合同中彻底分离；旧 `allowedFiles` 只作为 Phase 0 兼容字段保留。

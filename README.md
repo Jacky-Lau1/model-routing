@@ -2,7 +2,7 @@
 
 > 面向 Codex Desktop 的“强模型规划与验收 + 低成本模型受控执行”方案档案库。
 
-**状态：Orchestrator-first S0–S2 已完成；S3–S9 尚未实施。** 默认入口只暴露 Orchestrator；S1 已冻结严格合同、规范化哈希和 JSON Schema；S2 已实现独立 Workflow/Attempt 状态、PREPARED/SENDING/SUCCEEDED 检查点、AMBIGUOUS/BLOCKED、task/approval 幂等锁、原子写和统一脱敏，并接入当前 Orchestrator provider 调用。worktree、真实 capability 边界、route preflight、质量门和 GPT 前台仍待后续阶段完成。在 S0–S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
+**状态：Orchestrator-first S0–S3 已完成；S4–S9 尚未实施。** 默认入口只暴露 Orchestrator；S1 已冻结严格合同、规范化哈希和 JSON Schema；S2 已实现 durable attempt 与 ambiguous fail-closed；S3 已把当前 Orchestrator 的执行、验证、审查和修复目录切到按 run 管理的 isolated Git worktree，并用批准的完整 base commit、主 workspace snapshot/dirty evidence 和 isolation hash 绑定 legacy approval；Router state/managed roots 默认外置，approval-to-worktree handoff 和 cleanup 都具有可恢复的持久化意图。116/116 项离线测试通过。真实 capability 边界、route preflight、完整质量门和 GPT 前台仍待后续阶段完成。在 S0–S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
 
 ## 目标
 
@@ -32,6 +32,7 @@
 - [分阶段新对话交接与 Prompt](docs/17-orchestrator-first-stage-handoffs.md)
 - [S1 数据合同、隐私与 Schema](docs/18-s1-data-contracts.md)
 - [S2 Attempt 持久化、幂等与 Crash Matrix](docs/19-s2-attempt-persistence.md)
+- [S3 Isolated Git Worktree、生命周期与冲突检测](docs/20-s3-isolated-worktree.md)
 
 ## 当前入口与运行警告
 
@@ -46,16 +47,16 @@
 3. 低成本模型不可直接承担架构、权限扩大、发布、密钥处理或最终质量验收。
 4. 路由不可用、身份无法证明或测试失败时，必须显式停止/升级，不能静默回退到 Sol 或其他模型。
 5. 所有密钥仅保留在本机环境变量、系统凭据库或获批准的密钥管理服务中，绝不提交到本仓库。
-6. DeepSeek 不直接写主 working tree；worktree 只提供变更隔离，真实安全还依赖 capability/sandbox。
+6. 当前执行、验证、审查和修复只使用 run-scoped isolated worktree；主 workspace 的 dirty 内容不自动 overlay，完成前 snapshot 漂移会失败关闭。worktree 只提供变更隔离，真实安全仍依赖 S4 capability/sandbox。
 7. 未分类数据默认禁止第三方；私有数据外发必须绑定 provider、任务、路径/内容和审批。
 8. LLM 调用状态不明时进入 `AMBIGUOUS/BLOCKED`，不自动重发可能计费的请求。
 9. 新跨组件对象必须通过 S1 严格 schema 与规范化哈希；Phase 0 `allowedFiles`/旧审批只作为尚未迁移的兼容层。
 
 ## 继续实施
 
-实施已拆成一个阶段一个新对话。S0–S2 阶段门通过后，下一阶段是 S3 Isolated Git Worktree。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。
+实施已拆成一个阶段一个新对话。S0–S3 阶段门通过后，下一阶段是 S4 Safe Executor。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。
 
-> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S3。先确认 S2 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/18、docs/19、docs/08 和最新 logs。
+> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S4。先确认 S3 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/18、docs/19、docs/20、docs/08 和最新 logs。
 
 在 GitHub 网页链接可用后，也可以直接提供仓库 URL。任何实施前都应重新核验上游 Codex 文档、模型价格、提供商 API 兼容性与当前版本限制。
 

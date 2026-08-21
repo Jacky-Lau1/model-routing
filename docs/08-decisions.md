@@ -115,3 +115,15 @@
 - repair：round 至少为 1，因此创建新 attempt 并保留历史；幂等键相同但 request fingerprint 不同则失败关闭。
 - 持久化：同目录临时文件同步后 rename；Windows 短暂共享冲突只允许有限重试本地 rename，永不因此重试 provider。状态和错误统一脱敏，不保存 response body、raw payload 或 reasoning。
 - 兼容：S1 AttemptRecord 字段和 schema 未修改；Phase 0 工作流重命名为 `LegacyWorkflowState`，当前 Orchestrator 调用接入 S2 executor，完整 core/CLI 合同迁移仍属于 S7。
+
+## ADR-015：S3 使用批准 commit 的 run-scoped detached worktree
+
+- 日期：2026-08-21
+- 状态：接受
+- 决策：每个批准执行从主 workspace 的完整 base commit 创建按 run/plan/snapshot 派生的 detached worktree。主 workspace 的 modified/added/deleted/renamed/untracked 只形成相对路径与 SHA-256 evidence，不自动 overlay 到执行基线。
+- 审批绑定：S7 新 core 尚未接入前，legacy approval 和 S2 execution approval hash 显式加入 isolation hash；它绑定 repository identity、base commit、main workspace snapshot、dirty evidence、plan hash 和逻辑 worktree ID。S1 六类合同和 schema 不变。
+- 生命周期：state/managed roots 默认外置且不得位于目标 repo/common Git dir 内或彼此重叠；创建前原子持久化 `PREPARING`，验证 Git common dir、owner record、owned root、完整 base、clean detached HEAD 和 linked checkout 后才写 `READY`；正常完成默认 `RETAINED`。创建检查点中断只在证据完全匹配时恢复，证据不足写 `BLOCKED` 并保留诊断目录。
+- 并发 handoff：跨 Router 实例可见的 filesystem lock 绑定 approval、PID 与 nonce，覆盖 durable approval 绑定、prepare/recovery、`WORKTREE_READY` 和 legacy `EXECUTING` 的持久化；live owner 竞争调用直接返回既有状态，dead/ownerless owner 仅在锁归属或空目录证据匹配时原子隔离并回收。release 先原子 rename active lock 到 quarantine，再清理 sidecar，避免 owner 删除与目录删除之间的不可恢复窗口。
+- cleanup：只允许显式清理已验证、clean、owned 的 worktree，使用非 force `git worktree remove`；unknown、dirty、owner 篡改、junction/symlink 替换或 repository/base 不匹配一律拒绝。不使用自动 stash、`reset --hard`、prune 或递归删除未证明归属的路径。
+- rename 语义：冻结的 `WorkspaceDirtyEvidence` 在线协议记录 rename destination 和当前内容 hash；S3 内部 snapshot 额外绑定 original path，避免在不修改 S1 schema 的情况下丢失冲突证据。
+- cleanup：显式 clean cleanup 先持久化 `REMOVING`，非 force Git removal 后持久化 `REMOVED`，再清理 owner sidecar；三个中断点均可按归属证据幂等恢复。worktree 提供变更、验证和合并隔离，不是 OS sandbox；S4 仍需 capability boundary。dirty overlay 保留为 TODO-02；S3 只提供 apply 前 snapshot/路径冲突 primitive，不执行 S8 apply、merge 或 commit。

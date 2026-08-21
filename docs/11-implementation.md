@@ -1,6 +1,6 @@
 # 11｜最小实现与 CLI
 
-> 历史实现说明：本文描述整改前的 TypeScript Phase 0/1 主体。S0 已于 2026-08-21 完成默认入口退役；主 working tree 执行和后台 Codex planning/review 仍不代表目标架构。当前执行基线见 `docs/16-orchestrator-first-implementation-plan.md`。
+> 历史实现说明：本文描述整改前的 TypeScript Phase 0/1 主体。S0 已于 2026-08-21 完成默认入口退役；S3 已把执行及其后阶段切到 isolated worktree，但 legacy planning 与尚未实现的 S4 capability boundary 仍不代表目标架构。当前执行基线见 `docs/16-orchestrator-first-implementation-plan.md`。
 
 ## 已实现边界
 
@@ -36,7 +36,7 @@ DeepSeek 官方 V4 思考模式只提供关闭、`high` 和 `max`；`low/medium`
 
 ## 本地写入
 
-普通事件只在内存中流转，`.router-state/tasks/<task-id>/state.json` 仅在审批、验证、审查、完成或阻塞边界原子更新。默认不保存 Codex history、关闭 memories、限制工具输出进入会话的大小，并在 7 天后清理路由器状态。
+普通事件只在内存中流转，默认外置于系统临时目录的 `codex-model-router-state/tasks/<task-id>/state.json` 仅在审批、验证、审查、完成或阻塞边界原子更新；可用 `--state-root` 显式覆盖，但 S3 会拒绝位于目标仓库或其 common Git dir 内的 state root。默认不保存 Codex history、关闭 memories、限制工具输出进入会话的大小，并在 7 天后清理路由器状态。
 
 项目构建产物、依赖缓存与目标仓库自身写入不计入路由器 10 MB 元数据上限。真实磁盘降幅必须通过 Windows I/O 计数器与完整持久会话基线对比验证。
 

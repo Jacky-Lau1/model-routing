@@ -309,6 +309,7 @@ export interface LegacyApprovalRecord {
   planHash: string;
   approvedAt: string;
   routeFingerprint: string;
+  isolationHash: string;
 }
 
 export interface CacheMetrics {

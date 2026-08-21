@@ -1,8 +1,8 @@
 # 16｜Orchestrator-first 最终实施计划与阶段门
 
-> 状态：已接受的实施基线；尚未完成下述代码整改和规定的真实验证。
+> 状态：已接受的实施基线；S0–S3 已完成离线阶段门，S4–S9 尚未实施，规定的真实验证尚未运行。
 >
-> 更新时间：2026-08-20。
+> 更新时间：2026-08-21。
 >
 > 本文把 `docs/14-orchestrator-first-proposal.md`、外部评审建议和对 Draft PR #1 的代码复查合并为一条可分阶段执行的路线。每个阶段都应在独立 Codex 主会话中完成，并在通过阶段门后再进入下一阶段。
 
@@ -47,19 +47,19 @@ Codex GPT Final Review
 | 能力 | 当前状态 | 说明 |
 | --- | --- | --- |
 | 确定性路由策略 | Implemented / offline tested | 已有分类、阶段路由和预算测试，但策略将因隐私默认拒绝而调整 |
-| 审批哈希 | Implemented / insufficient binding | 只绑定了部分 route 字段，未覆盖 endpoint/auth/protocol/data scope |
-| DeepSeek Direct Adapter | Implemented / mock tested | 当前可读写目标目录；缺少独立 read scope、强 endpoint 断言和工作区隔离 |
+| 审批哈希 | Implemented / offline tested | S1 新合同完整绑定 task/route/context/policy；legacy 路径已增加 isolation hash，S5 endpoint 强证明和 S7 新 core 接入仍待完成 |
+| DeepSeek Direct Adapter | Implemented / mock tested | 当前 adapter cwd 已切到 isolated worktree；缺少 S4 独立 read/write capability 和 S5 endpoint 断言 |
 | Codex CLI planning/review | Implemented / architecture mismatch | 后台另起 Codex，不等于当前 GPT 主会话承担 Supervisor |
-| 主 working tree scope guard | Implemented / post-hoc only | 越界后才能发现，不能防止主目录污染 |
-| 低写入状态持久化 | Implemented / incomplete crash semantics | 外部调用前检查点不足，重复 approve 可能重复执行 |
+| 主 working tree scope guard | Implemented / isolated post-hoc | executor 后置范围检查已在 worktree 内运行；S4 预防性 capability 与 S6 完整 gate 仍待完成 |
+| 低写入状态持久化 | Implemented / offline tested | S2 已完成副作用前 checkpoint、幂等锁、原子写和 conservative recovery |
 | 原生 DeepSeek 菜单/profile | Implemented experiment / deprecated as default | 与 Orchestrator-first 正常体验冲突 |
-| Isolated worktree | Design only | 尚未实现 |
+| Isolated worktree | Implemented / offline tested | run-scoped detached worktree、dirty evidence、ownership-safe lifecycle 和冲突检测已通过 synthetic repo 测试；不是 OS sandbox |
 | Real sandbox/capability boundary | Design only | 尚未实现 |
-| Immutable RouteBinding | Design only | 尚未实现 |
-| Ambiguous paid-call handling | Design only | 尚未实现 |
+| Immutable RouteBinding | Contract implemented / not invoked | S1 类型/schema/hash 已离线验证；S5 才接入 endpoint/auth/model/protocol preflight |
+| Ambiguous paid-call handling | Implemented / offline tested | S2 timeout/reset/response lost → AMBIGUOUS/BLOCKED，禁止自动重发 |
 | EvidenceBundle | Design only | 尚未实现 |
 | GPT foreground MCP/skill | Design only | 尚未实现 |
-| Project policy | Design only | 尚未实现 |
+| Project policy | Contract implemented / offline tested | S1 user/project 交集与默认 deny 已验证；S7 新 core 接入仍待完成 |
 | Orchestrator-first live validation | Not run | 旧架构的真实调用不能替代新架构验证 |
 
 在所有阶段门和规定的真实验证完成前，不得称为 production ready。
@@ -485,6 +485,8 @@ GPT Final Review 只能返回：
 阶段门：不存在“磁盘仍为待批准、外部副作用已经发生”的可复现路径。
 
 ### S3｜Isolated Git Worktree
+
+> 完成记录（2026-08-21）：阶段门已通过。当前 Orchestrator 的执行、验证、审查、修复和诊断目录均切到批准 base commit 的 detached worktree；legacy approval 绑定 isolation hash，filesystem handoff lock 覆盖 approval 到 `WORKTREE_READY/EXECUTING` 持久化，生命周期经过 `PREPARING/READY/RETAINED/REMOVING/BLOCKED/REMOVED`，主 workspace snapshot 漂移失败关闭。TypeScript 与 116/116 项离线测试通过；实现、恢复矩阵和剩余边界见 `docs/20-s3-isolated-worktree.md`。未实现 OS sandbox、dirty overlay、强制 cleanup 或最终 apply。
 
 目标：DeepSeek 和质量门不再直接修改用户主 working tree。
 

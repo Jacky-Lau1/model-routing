@@ -17,6 +17,12 @@ async function fixture(state: RunState["state"] = "WAITING_APPROVAL") {
 }
 
 describe("low-write state store", () => {
+  it("defaults to an external system-temporary root instead of the current project", () => {
+    const store = new StateStore();
+    expect(store.root).toBe(path.resolve(os.tmpdir(), "codex-model-router-state"));
+    const relative = path.relative(process.cwd(), store.root);
+    expect(relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))).toBe(false);
+  });
   it("does not write non-checkpoint event states", async () => {
     const { store, value } = await fixture("EXECUTING"); await store.save(value);
     await expect(store.load(value.taskId)).rejects.toThrow();
