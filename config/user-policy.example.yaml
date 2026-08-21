@@ -1,13 +1,16 @@
-# Synthetic project-policy example. A repository policy is only a ceiling:
-# it cannot authorize egress when the user policy says deny.
+# Synthetic user-policy example. Real user policy must live outside a repository.
 version: 1
-policy_id: demo-project-policy
+policy_id: demo-user-policy
 egress_policy:
   mode: allow
   providers: [deepseek]
   paths: [src/example.ts, tests/example.test.ts]
   content_hashes:
     - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  authorization_id: synthetic-user-approval
+  authorized_by: user
+  authorized_at: 2026-08-21T00:00:00.000Z
+  expires_at: null
 read_scope: [src/example.ts, tests/example.test.ts]
 write_scope: [src/example.ts, tests/example.test.ts]
 budget_ceiling:
@@ -17,4 +20,4 @@ budget_ceiling:
   max_wall_time_ms: 30000
   max_estimated_cost_usd: 0.25
   billing_mode: prepaid
-policy_hash: 64c75c9105d59e33b0eb90bb0180c2582e183dea85121330c45fce0c3eaf7ed0
+policy_hash: 02153b6046738bc44f6f154f70cd66b0524f3a0b68ec8dab97290128fec867a4

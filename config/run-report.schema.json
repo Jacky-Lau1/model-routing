@@ -1,27 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Model Routing Run Report",
-  "type": "object",
-  "required": ["run_id", "task_id", "phase", "outcome", "route_evidence", "validation"],
-  "properties": {
-    "run_id": {"type": "string"},
-    "task_id": {"type": "string"},
-    "phase": {"enum": ["INTAKE", "PROFILED", "PLANNING", "WAITING_APPROVAL", "EXECUTING", "VALIDATING", "REVIEWING", "REPAIRING", "SOL_DIAGNOSIS", "WAITING_REAPPROVAL", "COMPLETED", "BLOCKED", "ABORTED"]},
-    "outcome": {"enum": ["passed", "failed", "escalated", "blocked"]},
-    "route_evidence": {"type": "object", "required": ["expected_role", "actual_provider", "actual_model", "request_id", "verified_by"], "properties": {"expected_role": {"type": "string"}, "actual_provider": {"type": "string"}, "actual_model": {"type": "string"}, "request_id": {"type": "string"}, "verified_by": {"type": "string"}}},
-    "files_changed": {"type": "array", "items": {"type": "string"}},
-    "validation": {"type": "object", "required": ["commands", "passed"], "properties": {"commands": {"type": "array", "items": {"type": "object"}}, "passed": {"type": "boolean"}}},
-    "usage": {"type": "object", "properties": {
-      "inputTokens": {"type": "integer", "minimum": 0},
-      "outputTokens": {"type": "integer", "minimum": 0},
-      "reasoningTokens": {"type": "integer", "minimum": 0},
-      "cachedInputTokens": {"type": "integer", "minimum": 0},
-      "cacheWriteTokens": {"type": "integer", "minimum": 0},
-      "cacheHitTokens": {"type": "integer", "minimum": 0},
-      "cacheMissTokens": {"type": "integer", "minimum": 0}
-    }, "additionalProperties": false},
-    "escalation_reason": {"type": "string"},
-    "redaction_notes": {"type": "string"}
-  },
-  "additionalProperties": false
+  "title": "Deprecated filename alias for EvidenceBundle",
+  "$comment": "Use evidence-bundle.schema.json for new integrations.",
+  "$ref": "./data-contracts.schema.json#/$defs/EvidenceBundle"
 }

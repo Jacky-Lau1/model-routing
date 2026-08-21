@@ -2,7 +2,7 @@
 
 > 用途：用户计划为每个实施阶段开启一个新的 Codex 主会话。本文提供共同上下文、阶段依赖、每阶段可直接复制的启动 Prompt 和结束交接要求。
 >
-> 状态：S0 已于 2026-08-21 通过；S1 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
+> 状态：S0、S1 已于 2026-08-21 通过；S2 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
 
 ## 一、所有新会话先读
 
@@ -11,11 +11,12 @@
 1. `docs/14-orchestrator-first-proposal.md`
 2. `docs/16-orchestrator-first-implementation-plan.md`
 3. 本文
-4. `docs/08-decisions.md`
-5. `CHANGELOG.md`
-6. `logs/decision-log.md`
-7. `logs/routing-validation-log.md`
-8. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
+4. 已完成 S1 后读取 `docs/18-s1-data-contracts.md`
+5. `docs/08-decisions.md`
+6. `CHANGELOG.md`
+7. `logs/decision-log.md`
+8. `logs/routing-validation-log.md`
+9. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
 
 共同目标体验：
 
@@ -88,8 +89,8 @@ S10 有限真实 Pilot
 | 阶段 | 当前状态 | 最近证据/提交 | 下一动作 |
 | --- | --- | --- | --- |
 | S0 | 已通过 | 2026-08-21：默认入口 Orchestrator-only；28/28 离线测试通过 | 保持退役边界，不回补 native switching |
-| S1 | 可开始 | S0 日志与 ADR-012 | 实施合同、隐私与 schema |
-| S2 | 未开始 | 现有持久化不足 | S1 通过后开始 |
+| S1 | 已通过 | 2026-08-21：六类合同、双维隐私、严格 schema；42/42 离线测试 | 保持合同边界，不在 provider 中临时绕过 |
+| S2 | 可开始 | S1 schema、ADR-013 与 `docs/18` | 实施 Workflow/Attempt 持久化与幂等 |
 | S3 | 未开始 | worktree 为 design only | S2 通过后开始 |
 | S4 | 未开始 | Direct Adapter 仅部分受限 | S3 通过后开始 |
 | S5 | 未开始 | endpoint mismatch 尚无 preflight | S4 通过后开始 |
@@ -128,7 +129,7 @@ S0 重点审查：
 
 S0 完成证据：默认安装器只生成 `Codex Router - Orchestrator`；mock backend 的实际生成与 dry-run 均通过；Router Terminal/CLI help 只把 Orchestrator 作为正常入口；`live-benchmark` 保持显式且未执行。阶段测试和扫描记录见 `logs/routing-validation-log.md`。
 
-## 六、S1 新对话 Prompt：合同、隐私与 schema
+## 六、S1 新对话 Prompt：合同、隐私与 schema（已完成，历史保留）
 
 ```markdown
 继续 Draft PR #1。本会话只实施 docs/16 的 S1：TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和项目 policy 的类型/schema 基线。
@@ -151,12 +152,14 @@ S1 预期关注文件：
 - `examples/*.json`
 - 对应测试和文档
 
+S1 完成证据：`src/contracts.ts` 提供严格解析与规范化 hash；`config/data-contracts.schema.json` 覆盖六类合同及 user/project policy；hash-valid 合成示例通过运行时校验；TypeScript 与 Vitest 42/42 通过。未接 provider、未创建 worktree、未实现 MCP、未调用 API。详细规则见 `docs/18-s1-data-contracts.md`。
+
 ## 七、S2 新对话 Prompt：状态、attempt 与幂等
 
 ```markdown
 继续 Draft PR #1。本会话只实施 docs/16 的 S2：双层 WorkflowState/AttemptState、外部副作用前检查点、重复/并发 execute 防护和 ambiguous paid-call 语义。
 
-先确认 S1 schema 已通过。采用默认规则：provider 调用前持久化 PREPARED，开始发送前 SENDING，只有完整响应和路由证据验证后 SUCCEEDED；timeout/reset/response lost 等无法证明服务端未执行的情况为 AMBIGUOUS → BLOCKED，不自动重发。FAILED_BEFORE_SEND 只用于可证明未发生外部副作用的本地失败。
+先确认 S1 schema 已通过，并阅读 `docs/18-s1-data-contracts.md`。采用默认规则：provider 调用前持久化 PREPARED，开始发送前 SENDING，只有完整响应和路由证据验证后 SUCCEEDED；timeout/reset/response lost 等无法证明服务端未执行的情况为 AMBIGUOUS → BLOCKED，不自动重发。FAILED_BEFORE_SEND 只用于可证明未发生外部副作用的本地失败。
 
 所有测试使用 mock provider，不连接网络、不读取真实 credential。逐个模拟 planning/execution/review/repair/diagnosis 异常和进程崩溃；两个并发 approve/execute 只能触发一次 mock 调用。不要在本阶段创建真正 worktree 或实现 MCP。
 

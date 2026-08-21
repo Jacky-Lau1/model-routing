@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "provider_id": "deepseek",
+  "adapter_id": "deepseek-direct",
+  "model_id": "deepseek-v4-flash",
+  "endpoint_origin": "https://api.deepseek.com",
+  "endpoint_path": "/chat/completions",
+  "wire_protocol": "chat_completions",
+  "auth_alias": "synthetic-deepseek-alias",
+  "reasoning_mode": "disabled",
+  "reasoning_effort": "none",
+  "request_budget": { "max_input_tokens": 4000, "max_output_tokens": 1000, "max_tool_calls": 2, "max_wall_time_ms": 30000, "max_estimated_cost_usd": 0.25, "billing_mode": "prepaid" },
+  "read_scope": ["src/example.ts"],
+  "write_scope": ["src/example.ts"],
+  "network_scope": ["https://api.deepseek.com"],
+  "environment_scope": [],
+  "command_scope": [],
+  "route_binding_hash": "07093de91e0ca0295c3d1e12eb153689516f9830239a4b82c9aac562bacab3da"
+}
