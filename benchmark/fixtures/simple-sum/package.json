@@ -1,0 +1,6 @@
+{
+  "name": "router-live-simple-sum",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}

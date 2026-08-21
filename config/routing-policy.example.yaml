@@ -1,21 +1,36 @@
 # 示例：仅作设计参考。真实端点和凭据必须保留在受保护的本机配置中。
-version: 1
-mode: design-only
+version: 2
+mode: phase-0
 defaults:
   fail_closed: true
   allow_silent_fallback: false
-  max_executor_attempts: 2
+  max_executor_attempts: 1
+  retention_days: 7
+  persist_event_stream: false
+  max_metadata_bytes_per_task: 10485760
   require_local_validation: true
   require_sol_review: true
   task_packet_max_context_ratio: 0.35
 
 roles:
+  classifier:
+    model: gpt-5.6-terra
+    reasoning_effort: low
   planner:
-    route: sol
+    default_model: gpt-5.6-terra
+    default_reasoning_effort: low
+    complex_reasoning_effort: medium
+    high_risk_model: gpt-5.6-sol
   reviewer:
-    route: sol
+    model: gpt-5.6-terra
+    default_reasoning_effort: low
+    visual_reasoning_effort: medium
   executor:
-    allowed_models: [] # Phase 0 通过后填写逻辑别名，不填写真实密钥或端点
+    normal_model: deepseek-v4-flash
+    normal_reasoning_effort: none
+    complex_model: deepseek-v4-pro
+    complex_reasoning_effort: high
+    deny_deepseek_for: [private, restricted]
 
 eligibility:
   allow:

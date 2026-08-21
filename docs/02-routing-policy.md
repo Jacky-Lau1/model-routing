@@ -2,17 +2,18 @@
 
 ## 状态机
 
-`INTAKE → PLAN → EXECUTOR_REQUIRED → LOCAL_VALIDATE → REVIEW → COMPLETED`
+当前实现状态机：`INTAKE → PROFILED → PLANNING → WAITING_APPROVAL → EXECUTING → VALIDATING → REVIEWING → COMPLETED`
 
-异常分支：`PLAN/EXECUTOR_REQUIRED/LOCAL_VALIDATE/REVIEW → SOL_ESCALATION`；不能安全恢复时进入 `BLOCKED`。每一次转移都须写入运行报告。
+异常分支：`REPAIRING → SOL_DIAGNOSIS → WAITING_REAPPROVAL`，以及 `BLOCKED / ABORTED`。旧的 `PLAN / EXECUTOR_REQUIRED / LOCAL_VALIDATE / REVIEW` 名称只保留用于历史设计记录。
 
 | 阶段 | 责任者 | 退出条件 |
 | --- | --- | --- |
-| INTAKE | Sol | 目标、范围、仓库、风险等级已明确 |
-| PLAN | Sol | 任务拆成可独立验收的小包 |
-| EXECUTOR_REQUIRED | 控制层 + 执行者 | 路由身份可证明，改动在允许范围内 |
-| LOCAL_VALIDATE | 本地工具 | 指定检查全部通过 |
-| REVIEW | Sol | diff、测试、约束与风险均被审查 |
+| INTAKE / PROFILED | 控制层 | 任务类型、复杂度、风险与敏感级别已明确 |
+| PLANNING | Terra，必要时 Sol | 任务拆成可独立验收的小包 |
+| WAITING_APPROVAL | 用户 | 计划、文件范围、路由与预算已批准 |
+| EXECUTING | DeepSeek；敏感任务为 Terra | 路由身份可证明，改动在允许范围内 |
+| VALIDATING | 本地工具 | 指定检查全部通过 |
+| REVIEWING | Terra | diff、测试、约束与风险均被审查 |
 | COMPLETED | 控制层 | 结果、成本和日志已归档 |
 
 ## 可路由条件
