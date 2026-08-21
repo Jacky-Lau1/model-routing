@@ -6,6 +6,11 @@
 
 ### Added
 
+- S4 `SafeExecutor` capability boundary：exact public read manifest、独立 write scope、physical path/reparse、大小/UTF-8/secret-content、内容 hash 与 preimage 校验。
+- Direct DeepSeek 工具面收敛为 `list_manifest`、`read_file`、内存 `propose_patch`；Orchestrator 只在 isolated worktree 的 S2 response validation 内应用一个原子 replacement/create。
+- credential helper 使用合成可注入依赖、最小 child environment 和由验证后 `SystemRoot` 派生的绝对 PowerShell 路径；auth 只进入 transport header，不进入模型 body。
+- S4 临时目录/mock fetch/synthetic credential 攻击矩阵，覆盖 Windows path/ADS/device/case、junction、scope/classification、敏感路径/内容、encoding/size/CRLF、tool/byte budget、preimage 和 private text fail-closed。
+- S4 专项实现与交接文档 `docs/21-s4-safe-executor.md`。
 - S3 `GitWorktreeManager`：批准 base commit、主 workspace dirty evidence/snapshot、run-scoped lifecycle、clean detached 创建恢复、归属验证、默认保留和带 `REMOVING` intent 的可恢复保守 cleanup。
 - 默认 Router state root 外置，并拒绝位于目标 repo/common Git dir 内或与 managed root 重叠的隔离根目录。
 - approval-to-worktree handoff 使用绑定 approval/PID/nonce 的 filesystem lock，覆盖 bind、prepare、`WORKTREE_READY` 与 legacy `EXECUTING` 持久化；归属匹配的 dead-owner、ownerless lock 可恢复，release 先原子移入 quarantine 再清理。
@@ -35,6 +40,9 @@
 
 ### Changed
 
+- legacy plan 现在分别审批 `readFiles`、`writeFiles` 和 `dataClassification`；`allowedFiles` 仅由 `writeFiles` 派生用于兼容/post-hoc 检查，三者变化都会使审批失效。
+- broad `list_files` 和 generic `write_file` 已从 Direct DeepSeek Adapter 删除；代码 capability 只在 `EXECUTE/REPAIR` 开启，非 public 或非代码注入 filesystem grant 均在 credential/fetch 前失败。
+- S4 MVP 明确拒绝 rename、delete、多文件 batch、binary、CRLF、问号 glob 和超限文件，不以扩大 writer 权限绕过 TODO-01。
 - 当前 Orchestrator 的 EXECUTE/VALIDATE/REVIEW/REPAIR/SOL_DIAGNOSIS 工作目录统一为批准的 detached isolated worktree；主 workspace 仅用于捕获和复核基线。
 - legacy approval 与 S2 execution approval hash 增加 isolation hash 绑定，并在 provider attempt 前经过 `APPROVED → WORKTREE_READY → EXECUTING`。
 - worktree 证据不足、主 workspace snapshot 漂移、非 owned/dirty cleanup 均失败关闭并保留诊断区；不使用 force cleanup、自动 stash 或 reset。

@@ -2,7 +2,7 @@
 
 > 用途：用户计划为每个实施阶段开启一个新的 Codex 主会话。本文提供共同上下文、阶段依赖、每阶段可直接复制的启动 Prompt 和结束交接要求。
 >
-> 状态：S0、S1、S2、S3 已于 2026-08-21 通过；S4 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
+> 状态：S0、S1、S2、S3、S4 已于 2026-08-21 通过；S5 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
 
 ## 一、所有新会话先读
 
@@ -14,11 +14,12 @@
 4. 已完成 S1 后读取 `docs/18-s1-data-contracts.md`
 5. 已完成 S2 后读取 `docs/19-s2-attempt-persistence.md`
 6. 已完成 S3 后读取 `docs/20-s3-isolated-worktree.md`
-7. `docs/08-decisions.md`
-8. `CHANGELOG.md`
-9. `logs/decision-log.md`
-10. `logs/routing-validation-log.md`
-11. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
+7. 已完成 S4 后读取 `docs/21-s4-safe-executor.md`
+8. `docs/08-decisions.md`
+9. `CHANGELOG.md`
+10. `logs/decision-log.md`
+11. `logs/routing-validation-log.md`
+12. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
 
 共同目标体验：
 
@@ -94,8 +95,8 @@ S10 有限真实 Pilot
 | S1 | 已通过 | 2026-08-21：六类合同、双维隐私、严格 schema；42/42 离线测试 | 保持合同边界，不在 provider 中临时绕过 |
 | S2 | 已通过 | 2026-08-21：双层状态、原子 checkpoint、幂等锁、crash recovery；67/67 离线测试 | 保持 AMBIGUOUS 禁止自动重发 |
 | S3 | 已通过 | 2026-08-21：run-scoped detached worktree、dirty evidence、归属/恢复/冲突检测；116/116 离线测试 | 保持变更隔离，不误称 OS sandbox |
-| S4 | 可开始 | Direct Adapter 仍仅部分受限 | 实施 capability boundary |
-| S5 | 未开始 | endpoint mismatch 尚无 preflight | S4 通过后开始 |
+| S4 | 已通过 | 2026-08-21：manifest-only read、single structured patch、physical path/env boundary；169/169 离线测试 | 保持 capability/OS sandbox 边界 |
+| S5 | 可开始 | endpoint mismatch 尚无 preflight | 只用 mock 实施 route preflight/evidence |
 | S6 | 未开始 | 当前只有局部 scope/validation evidence | S5 通过后开始 |
 | S7 | 未开始 | 当前 foreground interface 未实现 | S6 通过后开始 |
 | S8 | 未开始 | 当前 review/apply 语义未分离 | S7 通过后开始 |
@@ -182,7 +183,7 @@ S1 完成证据：`src/contracts.ts` 提供严格解析与规范化 hash；`conf
 
 S3 完成证据：`GitWorktreeManager` 从批准的完整 commit 创建 detached checkout，持久化逻辑生命周期和 owner evidence；legacy approval 绑定 isolation hash；filesystem handoff lock 覆盖 bind/prepare/`WORKTREE_READY`/legacy `EXECUTING`。当前 EXECUTE/VALIDATE/REVIEW/REPAIR/SOL_DIAGNOSIS 均使用同一隔离 checkout。clean/modified/added/untracked/renamed/deleted、创建/清理检查点恢复、同步并发审批、跨 Router 实例竞争、dead/ownerless lock 与 release 交错恢复、auto/approve pre-write root containment、READY residual、主目录漂移、build 产物隔离、dirty/unknown/junction cleanup 负例均在临时 synthetic repo 通过；TypeScript 与 Vitest 116/116 通过。未修改 S1 schema，未实现 dirty overlay、OS sandbox、force cleanup 或 S8 apply。详细规则见 `docs/20-s3-isolated-worktree.md`。
 
-## 九、S4 新对话 Prompt：Safe Executor
+## 九、S4 新对话 Prompt：Safe Executor（已完成，历史保留）
 
 ```markdown
 继续 Draft PR #1。本会话只实施 docs/16 的 S4：Direct DeepSeek Adapter 的 capability boundary。本轮仍不调用真实 DeepSeek。
@@ -193,6 +194,8 @@ S3 完成证据：`GitWorktreeManager` 从批准的完整 commit 创建 detached
 
 不要实现 Aider、shell、package install、GitHub、浏览器、并行 worker 或真实 API。
 ```
+
+S4 完成证据：legacy plan 分别审批 `readFiles`、`writeFiles`、`dataClassification`，所有 DeepSeek stage 在 S7 完整 policy 接线前仅允许 public。Direct DeepSeek code adapter 只暴露 `list_manifest`、`read_file`、`propose_patch`，删除 broad list/generic writer；capability/root 预检先于 credential/fetch，credential child 不继承 PATH 并使用绝对 PowerShell 路径。read 经过 manifest/physical path/junction/reparse/classification/size/encoding/secret/hash 检查，单文件 proposal 在 S2 async response validation 中按 write scope/preimage 原子应用，失败为 `AMBIGUOUS/BLOCKED` 且不重发。TypeScript 与 Vitest 15/15 files、169/169 tests 在 synthetic repo、mock fetch/provider 下通过。TODO-01 固定 structured patch；CRLF/binary/large/rename/delete/multi-file 均拒绝。未验证真实 endpoint/auth/model/protocol、任意 Windows reparse tag、OS sandbox 或真实 API，详见 `docs/21-s4-safe-executor.md`。
 
 ## 十、S5 新对话 Prompt：RouteBinding 与 endpoint preflight
 

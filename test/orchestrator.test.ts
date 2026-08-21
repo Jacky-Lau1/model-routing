@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -18,9 +19,12 @@ class MockModel implements ProviderAdapter {
   readonly provider = "openai-codex" as const;
   async invoke(request: ProviderRequest): Promise<ProviderResponse> {
     const text = request.stage === "PLAN"
-      ? JSON.stringify({ steps: ["edit parser"], allowedFiles: ["src/parser.ts"], constraints: ["no API change"], acceptance: ["tests pass"], validationCommands: ["npm test"] })
+      ? JSON.stringify({ steps: ["edit parser"], readFiles: ["src/parser.ts"], writeFiles: ["src/parser.ts"], dataClassification: "public", constraints: ["no API change"], acceptance: ["tests pass"], validationCommands: ["npm test"] })
       : request.stage === "REVIEW" ? JSON.stringify({ verdict: "pass", findings: [], summary: "accepted" }) : "execution completed";
-    return { text, requestId: request.stage, provider: request.route.provider, model: request.route.model, usage };
+    const structuredPatches = request.route.provider === "deepseek" && (request.stage === "EXECUTE" || request.stage === "REPAIR")
+      ? [{ path: "src/parser.ts", preimageHash: createHash("sha256").update(await readFile(path.join(request.workingDirectory!, "src", "parser.ts"))).digest("hex"), replacement: "export const parser = 2;\n" }]
+      : undefined;
+    return { text, requestId: request.stage, provider: request.route.provider, model: request.route.model, usage, structuredPatches };
   }
 }
 class MockLocal implements ProviderAdapter {
@@ -32,7 +36,6 @@ class WritingModel extends MockModel {
   readonly workingDirectories: string[] = [];
   override async invoke(request: ProviderRequest): Promise<ProviderResponse> {
     if (request.stage === "EXECUTE" || request.stage === "REVIEW") this.workingDirectories.push(request.workingDirectory ?? "");
-    if (request.stage === "EXECUTE") await writeFile(path.join(request.workingDirectory!, "src", "parser.ts"), "export const parser = 2;\n");
     return super.invoke(request);
   }
 }
@@ -71,6 +74,23 @@ class ScopeViolatingModel extends MockModel {
   }
 }
 
+class BadPreimageModel extends MockModel {
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> {
+    const response = await super.invoke(request);
+    if (request.stage === "EXECUTE") response.structuredPatches = [{ path: "src/parser.ts", preimageHash: "0".repeat(64), replacement: "bad\n" }];
+    return response;
+  }
+}
+
+class PrivateTextModel extends MockModel {
+  textExpandCalls = 0;
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> {
+    if (request.stage === "TEXT_FRAME") return { text: JSON.stringify({ steps: ["expand text"], readFiles: ["src/parser.ts"], writeFiles: ["src/parser.ts"], dataClassification: "private", constraints: [], acceptance: ["complete"], validationCommands: [] }), requestId: "TEXT_FRAME", provider: request.route.provider, model: request.route.model, usage };
+    if (request.stage === "TEXT_EXPAND") this.textExpandCalls++;
+    return super.invoke(request);
+  }
+}
+
 class GateModel extends MockModel {
   executeCalls = 0;
   release: (() => void) | undefined;
@@ -94,6 +114,7 @@ describe("approval workflow", () => {
     expect(planned.state).toBe("WAITING_APPROVAL");
     expect(planned.approval).toBeUndefined();
     const completed = await router.approve(planned.taskId, subject.main);
+    expect(completed.lastError).toBeUndefined();
     expect(completed.state).toBe("COMPLETED");
     expect(completed.routeEvidence?.map(item => item.expectedModel)).toEqual(["gpt-5.6-terra", "deepseek-v4-flash", "local-quality-gates", "gpt-5.6-terra"]);
     expect(completed.usage?.cachedInputTokens).toBe(8);
@@ -168,6 +189,7 @@ describe("approval workflow", () => {
     const completed = await router.approve(planned.taskId, subject.main);
     expect(completed.state).toBe("COMPLETED"); expect(model.workingDirectories).toHaveLength(2); expect(local.workingDirectories).toHaveLength(1);
     const isolated = model.workingDirectories[0]; expect(isolated).not.toBe(subject.main); expect(model.workingDirectories[1]).toBe(isolated); expect(local.workingDirectories[0]).toBe(isolated);
+    expect(await readFile(path.join(isolated, "src", "parser.ts"), "utf8")).toBe("export const parser = 2;\n");
     expect(await readFile(path.join(subject.main, "src", "parser.ts"))).toEqual(mainContent); await expect(access(path.join(subject.main, "dist", "validation.txt"))).rejects.toThrow();
     expect(await git(subject.main, ["status", "--porcelain=v1", "-z"])).toBe(mainStatus);
   });
@@ -216,6 +238,24 @@ describe("approval workflow", () => {
     await expect(access(path.join(subject.main, "outside-plan.txt"))).rejects.toThrow();
   });
 
+  it("marks an invalid structured preimage AMBIGUOUS without changing main or retrying", async () => {
+    const subject = await workflowFixture(); const model = new BadPreimageModel(); const router = new RouterOrchestrator(model, new MockLocal(), subject.store, undefined, subject.worktrees);
+    const original = await readFile(path.join(subject.main, "src", "parser.ts")); const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main });
+    const blocked = await router.approve(planned.taskId, subject.main); expect(blocked.state).toBe("BLOCKED");
+    const attempt = (await new AttemptPersistence(subject.store.root).listAttempts(planned.taskId)).find(item => item.stage === "EXECUTE");
+    expect(attempt).toMatchObject({ status: "AMBIGUOUS", failure_class: "response_invalid" });
+    expect(await readFile(path.join(subject.main, "src", "parser.ts"))).toEqual(original);
+    expect((await router.approve(planned.taskId, subject.main)).state).toBe("BLOCKED");
+  });
+
+  it("blocks a private text plan before any DeepSeek TEXT_EXPAND send", async () => {
+    const subject = await workflowFixture(); const model = new PrivateTextModel(); const router = new RouterOrchestrator(model, new MockLocal(), subject.store, undefined, subject.worktrees);
+    const planned = await router.auto("Expand a synthetic document", { projectDirectory: subject.main, profile: { kind: "text", sensitivity: "normal" } });
+    expect(planned.state).toBe("WAITING_APPROVAL"); const blocked = await router.approve(planned.taskId, subject.main);
+    expect(blocked.state).toBe("BLOCKED"); expect(blocked.lastError).toMatch(/public classification/); expect(model.textExpandCalls).toBe(0);
+    expect((await new AttemptPersistence(subject.store.root).listAttempts(planned.taskId)).some(item => item.stage === "TEXT_EXPAND")).toBe(false);
+  });
+
   it("blocks completion when the main workspace changes during isolated execution", async () => {
     const subject = await workflowFixture(); const model = new GateModel();
     const router = new RouterOrchestrator(model, new MockLocal(), subject.store, undefined, subject.worktrees);
@@ -231,7 +271,7 @@ describe("approval workflow", () => {
 
 async function workflowFixture(): Promise<{ root: string; main: string; store: StateStore; worktrees: GitWorktreeManager }> {
   const root = await mkdtemp(path.join(os.tmpdir(), "router-flow-")); roots.push(root); const main = path.join(root, "main");
-  await mkdir(path.join(main, "src"), { recursive: true }); await git(main, ["init", "-b", "main"]); await git(main, ["config", "user.name", "Synthetic Test"]); await git(main, ["config", "user.email", "synthetic@example.invalid"]);
+  await mkdir(path.join(main, "src"), { recursive: true }); await git(main, ["init", "-b", "main"]); await git(main, ["config", "user.name", "Synthetic Test"]); await git(main, ["config", "user.email", "synthetic@example.invalid"]); await git(main, ["config", "core.autocrlf", "false"]);
   await writeFile(path.join(main, "src", "parser.ts"), "export const parser = 1;\n"); await writeFile(path.join(main, ".gitignore"), "dist/\n"); await git(main, ["add", "--", ".gitignore", "src/parser.ts"]); await git(main, ["commit", "-m", "synthetic base"]);
   const store = new StateStore(path.join(root, "state")); const worktrees = new GitWorktreeManager({ stateRoot: store.root, managedRoot: path.join(root, "managed") });
   return { root, main, store, worktrees };

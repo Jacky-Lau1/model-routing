@@ -10,10 +10,11 @@ import { estimateEquivalentUsd, PRICING_CATALOG_VERSION } from "./cost.js";
 import { StateStore, transitionState } from "./persistence.js";
 import { decideRoute } from "./policy.js";
 import { redactError } from "./redaction.js";
+import { applyStructuredPatches, buildExecutorCapabilityGrant } from "./safe-executor.js";
 import { assertLegacyTransition, canLegacyTransition } from "./state-machine.js";
 import { assertAllowedChanges, snapshotWorkingTree } from "./scope-guard.js";
 import { GitWorktreeManager, type WorktreeLease } from "./worktree.js";
-import type { LegacyWorkflowState, PlanPacket, ProviderAdapter, ProviderRequest, ProviderResponse, RouteDecision, RunState, TaskProfile, UsageMetrics, WorkflowState } from "./types.js";
+import type { DataClassification, LegacyWorkflowState, PlanPacket, ProviderAdapter, ProviderRequest, ProviderResponse, RouteDecision, RunState, TaskProfile, UsageMetrics, WorkflowState } from "./types.js";
 
 export interface AutoOptions {
   projectDirectory?: string;
@@ -21,7 +22,7 @@ export interface AutoOptions {
   taskId?: string;
 }
 
-interface DraftPlan { nonGoals?: string[]; steps: string[]; allowedFiles: string[]; constraints: string[]; acceptance: string[]; validationCommands?: string[] }
+interface DraftPlan { nonGoals?: string[]; steps: string[]; readFiles: string[]; writeFiles: string[]; dataClassification: DataClassification; constraints: string[]; acceptance: string[]; validationCommands?: string[] }
 interface Review { verdict: "pass" | "repair" | "escalate"; findings?: string[]; summary?: string; finalText?: string }
 
 export class RouterOrchestrator {
@@ -70,7 +71,8 @@ export class RouterOrchestrator {
     const executionStage = profile.kind === "text" ? "TEXT_EXPAND" : "EXECUTE";
     const plan: PlanPacket = {
       version: 1, taskId, objective, nonGoals: draft.nonGoals ?? [], steps: requiredArray(draft.steps, "steps"),
-      allowedFiles: requiredArray(draft.allowedFiles, "allowedFiles"), constraints: draft.constraints ?? [],
+      readFiles: requiredArray(draft.readFiles, "readFiles"), writeFiles: requiredArray(draft.writeFiles, "writeFiles"),
+      dataClassification: draft.dataClassification, allowedFiles: requiredArray(draft.writeFiles, "writeFiles"), constraints: draft.constraints ?? [],
       acceptance: requiredArray(draft.acceptance, "acceptance"), validationCommands: draft.validationCommands ?? [],
       route: decideRoute(executionStage, profile),
     };
@@ -118,7 +120,7 @@ export class RouterOrchestrator {
       const execution = await this.invokeExecution(state, plan.route, isolatedDirectory, "Perform only the approved plan. Respect allowed files and stop conditions.");
       if (!execution) return this.store.load(taskId);
       const scopeAfter = await snapshotWorkingTree(isolatedDirectory);
-      assertAllowedChanges(scopeBefore, scopeAfter, plan.allowedFiles);
+      assertAllowedChanges(scopeBefore, scopeAfter, plan.writeFiles);
       state = addResponse({ ...state, attempts: state.attempts + 1, result: execution.text }, plan.route, execution);
       state = move(state, "VALIDATING"); await this.store.save(state);
       let validation = await this.validate(state, isolatedDirectory);
@@ -161,12 +163,25 @@ export class RouterOrchestrator {
 
   private async invokeExecution(state: RunState, route: RouteDecision, projectDirectory: string, instruction: string): Promise<ProviderResponse | undefined> {
     if (!state.plan || !state.approval) throw new Error("Missing plan or approval"); assertApproval(state.plan, state.approval, state.approval.isolationHash);
-    const prompt = buildPrompt(route.stage, instruction, "Return a concise execution summary and evidence.", JSON.stringify({ allowedFiles: state.plan.allowedFiles, constraints: state.plan.constraints }), JSON.stringify(state.plan), state.profile.sensitivity);
-    const request = { stage: route.stage, route, ...prompt, sensitivity: state.profile.sensitivity, workingDirectory: projectDirectory, allowedFiles: state.plan.allowedFiles } satisfies ProviderRequest;
+    if (route.provider === "deepseek" && state.plan.dataClassification !== "public") throw new Error("Legacy DeepSeek execution requires an explicitly approved public classification");
+    const codeExecution = route.stage === "EXECUTE" || route.stage === "REPAIR";
+    const prompt = buildPrompt(route.stage, instruction, "Return a concise execution summary and evidence.", JSON.stringify({ readFiles: state.plan.readFiles, writeFiles: state.plan.writeFiles, constraints: state.plan.constraints }), JSON.stringify(state.plan), state.profile.sensitivity);
+    const executorCapabilities = route.provider === "deepseek" && codeExecution
+      ? await buildExecutorCapabilityGrant(projectDirectory, state.plan.readFiles, state.plan.writeFiles, state.plan.dataClassification)
+      : undefined;
+    const request = { stage: route.stage, route, ...prompt, sensitivity: state.profile.sensitivity, workingDirectory: projectDirectory, allowedFiles: state.plan.writeFiles, executorCapabilities } satisfies ProviderRequest;
     const tracked = route.stage === "REPAIR" ? this.attempts.repair.bind(this.attempts) : this.attempts.execute.bind(this.attempts);
     return this.invokeTracked(state, this.modelAdapter, request, {
       approvalHash: executionApprovalHash(state.plan, state.approval.isolationHash), round: route.stage === "REPAIR" ? state.repairAttempts + 1 : 0,
       initial: route.stage === "REPAIR" ? "REPAIR_REQUIRED" : "WORKTREE_READY", start: "EXECUTING", success: "VALIDATING", tracked,
+      validate: async response => {
+        if (route.provider !== "deepseek" || !codeExecution) return;
+        if (!executorCapabilities || !Array.isArray(response.structuredPatches) || response.structuredPatches.length !== 1) throw new Error("DeepSeek code execution requires exactly one structured patch proposal");
+        // Apply only after a complete provider response is available, but
+        // before SUCCEEDED is persisted. A crash or local apply failure remains
+        // AMBIGUOUS/BLOCKED and can never trigger an automatic resend.
+        await applyStructuredPatches(projectDirectory, executorCapabilities, response.structuredPatches);
+      },
     });
   }
 
@@ -213,7 +228,7 @@ export class RouterOrchestrator {
     const repaired = await this.invokeExecution(state, route, projectDirectory, `Repair once using this evidence:\n${evidenceText}`);
     if (!repaired) return this.store.load(state.taskId);
     const scopeAfter = await snapshotWorkingTree(projectDirectory);
-    assertAllowedChanges(scopeBefore, scopeAfter, plan.allowedFiles);
+    assertAllowedChanges(scopeBefore, scopeAfter, plan.writeFiles);
     state = addResponse({ ...state, repairAttempts: 1, result: repaired.text }, route, repaired);
     state = move(state, "VALIDATING"); await this.store.save(state); return state;
   }
@@ -241,7 +256,7 @@ export class RouterOrchestrator {
     request: ProviderRequest,
     options: {
       approvalHash: string; round: number; initial: WorkflowState; start: WorkflowState; success: WorkflowState;
-      validate?: (response: ProviderResponse) => void;
+      validate?: (response: ProviderResponse) => void | Promise<void>;
       tracked?: DurableAttemptExecutor["execute"];
     },
   ): Promise<ProviderResponse | undefined> {
@@ -253,10 +268,10 @@ export class RouterOrchestrator {
     const execute = options.tracked ?? this.attempts.execute.bind(this.attempts);
     const result = await execute(attemptRequest, {
       send: () => adapter.invoke(request),
-      validate: response => {
+      validate: async response => {
         if (typeof response.text !== "string" || response.text.length === 0) throw new Error("Provider response was incomplete");
         if (response.provider !== request.route.provider || response.model !== request.route.model) throw new Error("Provider response identity did not match the approved route");
-        options.validate?.(response);
+        await options.validate?.(response);
         return {
           complete: true, provider_request_id: response.requestId || "unreported", response_model: response.model,
           response_origin: `unverified://${response.provider}`, usage: {
@@ -282,10 +297,14 @@ function executionApprovalHash(plan: PlanPacket, isolationHash: string): string 
 function requiredIsolationHash(state: RunState): string { if (!state.approval?.isolationHash) throw new Error("Missing approved isolation binding"); return state.approval.isolationHash; }
 function providerRequestFingerprint(request: ProviderRequest): string { return stableHash({
   stage: request.stage, route: request.route, stable_prefix: request.stablePrefix, project_summary: request.projectSummary,
-  dynamic_input: request.dynamicInput, sensitivity: request.sensitivity, allowed_files: request.allowedFiles ?? [], tools: request.tools ?? [],
+  dynamic_input: request.dynamicInput, sensitivity: request.sensitivity, allowed_files: request.allowedFiles ?? [],
+  executor_capabilities: request.executorCapabilities ?? null, tools: request.tools ?? [],
 }); }
-function validateDraftPlan(value: DraftPlan): void { requiredArray(value.steps, "steps"); requiredArray(value.allowedFiles, "allowedFiles"); requiredArray(value.acceptance, "acceptance"); }
+function validateDraftPlan(value: DraftPlan): void {
+  requiredArray(value.steps, "steps"); requiredArray(value.readFiles, "readFiles"); requiredArray(value.writeFiles, "writeFiles"); requiredArray(value.acceptance, "acceptance");
+  if (!value || !["public", "private", "secret_restricted"].includes(value.dataClassification)) throw new Error("Plan field dataClassification is invalid");
+}
 function validateReview(value: Review): void { if (!value || !["pass", "repair", "escalate"].includes(value.verdict)) throw new Error("Review response was incomplete"); }
 
-const PLAN_SCHEMA = JSON.stringify({ type: "object", required: ["steps", "allowedFiles", "acceptance"], properties: { nonGoals: { type: "array", items: { type: "string" } }, steps: { type: "array", items: { type: "string" } }, allowedFiles: { type: "array", items: { type: "string" } }, constraints: { type: "array", items: { type: "string" } }, acceptance: { type: "array", items: { type: "string" } }, validationCommands: { type: "array", items: { type: "string" } } }, additionalProperties: false });
+const PLAN_SCHEMA = JSON.stringify({ type: "object", required: ["steps", "readFiles", "writeFiles", "dataClassification", "acceptance"], properties: { nonGoals: { type: "array", items: { type: "string" } }, steps: { type: "array", items: { type: "string" } }, readFiles: { type: "array", items: { type: "string" } }, writeFiles: { type: "array", items: { type: "string" } }, dataClassification: { enum: ["public", "private", "secret_restricted"] }, constraints: { type: "array", items: { type: "string" } }, acceptance: { type: "array", items: { type: "string" } }, validationCommands: { type: "array", items: { type: "string" } } }, additionalProperties: false });
 const REVIEW_SCHEMA = JSON.stringify({ type: "object", required: ["verdict"], properties: { verdict: { enum: ["pass", "repair", "escalate"] }, findings: { type: "array", items: { type: "string" } }, summary: { type: "string" }, finalText: { type: "string" } }, additionalProperties: false });

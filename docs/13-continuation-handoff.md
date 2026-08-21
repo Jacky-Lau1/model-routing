@@ -1,4 +1,4 @@
-# 13｜继续研发交接（S0 收口版，2026-08-21）
+# 13｜继续研发交接（S4 更新，2026-08-21）
 
 > 本文是历史实现到 Orchestrator-first 的迁移交接。当前阶段基线见 `docs/16-orchestrator-first-implementation-plan.md`，逐阶段入口见 `docs/17-orchestrator-first-stage-handoffs.md`。
 
@@ -9,7 +9,7 @@
 - 默认安装器不再创建 native DeepSeek、OpenAI Codex 或 Restore OpenAI 快捷方式。
 - native provider switch 与 profile 安装脚本已移到 `scripts/deprecated-experimental/native-codex/`，仅供协议兼容性考古，不受支持、不执行。
 - `route live-benchmark` 仍是显式命令；安装、默认检查和 S0-S9 测试不得触发。
-- 历史 S0 交接时，TypeScript Orchestrator 主体仍是整改前 Phase 0/1。当前 S1–S3 已完成；S4–S9 的 capability、route evidence、quality bundle、GPT 前台、apply 与 E2E 尚未完成，现状以 `docs/16` 和 `docs/17` 为准。
+- 历史 S0 交接时，TypeScript Orchestrator 主体仍是整改前 Phase 0/1。当前 S1–S4 已完成；S5–S9 的 route evidence、quality bundle、GPT 前台、apply 与 E2E 尚未完成，现状以 `docs/16`、`docs/17` 和 `docs/21` 为准。
 
 ## S0 的默认入口
 
@@ -36,7 +36,7 @@ deprecated experimental 目录中的脚本可能下载外部内容、写 Codex p
 
 ## 历史下一阶段
 
-本节保留 S0 完成时的交接语义：当时下一阶段是 S1，且只实施 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和 privacy/policy schema 基线。当前 S1–S3 已完成，下一阶段为 S4；不得再使用本节作为当前启动指令。
+本节保留 S0 完成时的交接语义：当时下一阶段是 S1，且只实施 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和 privacy/policy schema 基线。当前 S1–S4 已完成，下一阶段为 S5；不得再使用本节作为当前启动指令。
 
 ## 先读哪些文件
 
@@ -46,4 +46,5 @@ deprecated experimental 目录中的脚本可能下载外部内容、写 Codex p
 4. `docs/08-decisions.md`
 5. `README.md`、`ROADMAP.md`、`CHANGELOG.md`
 6. `logs/decision-log.md`、`logs/routing-validation-log.md`
-7. S1 涉及的源码、schema 和测试
+7. `docs/18-s1-data-contracts.md`、`docs/19-s2-attempt-persistence.md`、`docs/20-s3-isolated-worktree.md`、`docs/21-s4-safe-executor.md`
+8. S5 涉及的 route/provider 源码、schema 和 mock 测试

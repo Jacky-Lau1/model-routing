@@ -127,3 +127,14 @@
 - cleanup：只允许显式清理已验证、clean、owned 的 worktree，使用非 force `git worktree remove`；unknown、dirty、owner 篡改、junction/symlink 替换或 repository/base 不匹配一律拒绝。不使用自动 stash、`reset --hard`、prune 或递归删除未证明归属的路径。
 - rename 语义：冻结的 `WorkspaceDirtyEvidence` 在线协议记录 rename destination 和当前内容 hash；S3 内部 snapshot 额外绑定 original path，避免在不修改 S1 schema 的情况下丢失冲突证据。
 - cleanup：显式 clean cleanup 先持久化 `REMOVING`，非 force Git removal 后持久化 `REMOVED`，再清理 owner sidecar；三个中断点均可按归属证据幂等恢复。worktree 提供变更、验证和合并隔离，不是 OS sandbox；S4 仍需 capability boundary。dirty overlay 保留为 TODO-02；S3 只提供 apply 前 snapshot/路径冲突 primitive，不执行 S8 apply、merge 或 commit。
+
+## ADR-016：S4 Direct DeepSeek 使用 manifest read 与单文件 structured patch
+
+- 日期：2026-08-21
+- 状态：接受
+- 决策：Direct Adapter 是唯一 MVP DeepSeek code executor；模型工具面只提供 `list_manifest`、`read_file`、`propose_patch`。删除 broad `list_files` 和 generic `write_file`，不提供 shell、任意命令、package install、GitHub、浏览器或任意工具网络。
+- 授权：legacy plan 分别审批 exact `readFiles`、`writeFiles` 和 `dataClassification`；`allowedFiles` 只由 write scope 派生。S7 接入完整 TaskPackage/EffectivePolicy 前，所有 DeepSeek stage 只接受显式 public 分类，private/secret 失败关闭。
+- 文件边界：read 必须同时命中批准 manifest、原始字节 hash、byte length、UTF-8/size/content policy 和无 symlink/junction/reparse 的物理路径；write 还必须命中大小写精确 scope 和 preimage hash。问号 glob、CRLF、binary、大文件、rename、delete 和多文件 patch 在 MVP 中拒绝。
+- 副作用：`propose_patch` 只在 adapter 内存收集；Orchestrator 在隔离 worktree 的异步 response validation 中应用一个同目录 staged replacement/create，成功后才允许 attempt 写 `SUCCEEDED`。失败/崩溃进入 `AMBIGUOUS/BLOCKED`，不自动重发。
+- 环境：credential helper child 只获得显式最小 environment 和专用 secret path；PowerShell executable 由校验后的 `SystemRoot` 构造绝对路径，不通过 PATH 搜索。auth secret 只进入 transport header，不进入 plan、消息或持久状态。
+- 边界：TODO-01 固定 structured patch，不开放受限 writer；TODO-03 OS sandbox 仍开放。S4 不验证 endpoint/auth/model/protocol/redirect（S5），也不替代 S6 quality gate、secret scan 或 EvidenceBundle。

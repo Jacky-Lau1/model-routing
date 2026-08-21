@@ -2,7 +2,7 @@
 
 > 面向 Codex Desktop 的“强模型规划与验收 + 低成本模型受控执行”方案档案库。
 
-**状态：Orchestrator-first S0–S3 已完成；S4–S9 尚未实施。** 默认入口只暴露 Orchestrator；S1 已冻结严格合同、规范化哈希和 JSON Schema；S2 已实现 durable attempt 与 ambiguous fail-closed；S3 已把当前 Orchestrator 的执行、验证、审查和修复目录切到按 run 管理的 isolated Git worktree，并用批准的完整 base commit、主 workspace snapshot/dirty evidence 和 isolation hash 绑定 legacy approval；Router state/managed roots 默认外置，approval-to-worktree handoff 和 cleanup 都具有可恢复的持久化意图。116/116 项离线测试通过。真实 capability 边界、route preflight、完整质量门和 GPT 前台仍待后续阶段完成。在 S0–S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
+**状态：Orchestrator-first S0–S4 已完成；S5–S9 尚未实施。** 默认入口只暴露 Orchestrator；S1 冻结严格合同和 schema，S2 实现 durable attempt/ambiguous fail-closed，S3 把执行链切到 run-scoped isolated worktree，S4 又把 Direct DeepSeek 代码工具面收窄为批准 manifest 上的 `list_manifest`/`read_file` 和只在内存收集的单文件 `propose_patch`。legacy plan 的读、写范围和 public 分类分别审批，Orchestrator 只在隔离 worktree 内按 preimage hash 原子应用 proposal；generic writer、shell、任意命令和模型工具网络均未暴露。TypeScript 与 15/15 files、169/169 项离线测试通过。S5 route identity、S6 完整质量门、GPT 前台和 OS sandbox 仍待后续阶段；未运行真实 API，不构成生产可用声明。
 
 ## 目标
 
@@ -33,6 +33,7 @@
 - [S1 数据合同、隐私与 Schema](docs/18-s1-data-contracts.md)
 - [S2 Attempt 持久化、幂等与 Crash Matrix](docs/19-s2-attempt-persistence.md)
 - [S3 Isolated Git Worktree、生命周期与冲突检测](docs/20-s3-isolated-worktree.md)
+- [S4 Direct DeepSeek Safe Executor 与 Capability Boundary](docs/21-s4-safe-executor.md)
 
 ## 当前入口与运行警告
 
@@ -47,16 +48,16 @@
 3. 低成本模型不可直接承担架构、权限扩大、发布、密钥处理或最终质量验收。
 4. 路由不可用、身份无法证明或测试失败时，必须显式停止/升级，不能静默回退到 Sol 或其他模型。
 5. 所有密钥仅保留在本机环境变量、系统凭据库或获批准的密钥管理服务中，绝不提交到本仓库。
-6. 当前执行、验证、审查和修复只使用 run-scoped isolated worktree；主 workspace 的 dirty 内容不自动 overlay，完成前 snapshot 漂移会失败关闭。worktree 只提供变更隔离，真实安全仍依赖 S4 capability/sandbox。
+6. 当前 Direct DeepSeek 代码执行只在 run-scoped isolated worktree 内使用 S4 manifest/preimage capability；主 workspace 的 dirty 内容不自动 overlay，完成前 snapshot 漂移会失败关闭。该 capability 测试不等于 OS sandbox。
 7. 未分类数据默认禁止第三方；私有数据外发必须绑定 provider、任务、路径/内容和审批。
 8. LLM 调用状态不明时进入 `AMBIGUOUS/BLOCKED`，不自动重发可能计费的请求。
-9. 新跨组件对象必须通过 S1 严格 schema 与规范化哈希；Phase 0 `allowedFiles`/旧审批只作为尚未迁移的兼容层。
+9. 新跨组件对象必须通过 S1 严格 schema 与规范化哈希；legacy `allowedFiles` 仅由已批准 `writeFiles` 派生用于兼容/post-hoc 检查，不能授权读取或 Direct Adapter 写入。
 
 ## 继续实施
 
-实施已拆成一个阶段一个新对话。S0–S3 阶段门通过后，下一阶段是 S4 Safe Executor。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。
+实施已拆成一个阶段一个新对话。S0–S4 阶段门通过后，下一阶段是 S5 RouteBinding preflight。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。
 
-> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S4。先确认 S3 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/18、docs/19、docs/20、docs/08 和最新 logs。
+> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S5。先确认 S4 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/18、docs/19、docs/20、docs/21、docs/08 和最新 logs。
 
 在 GitHub 网页链接可用后，也可以直接提供仓库 URL。任何实施前都应重新核验上游 Codex 文档、模型价格、提供商 API 兼容性与当前版本限制。
 

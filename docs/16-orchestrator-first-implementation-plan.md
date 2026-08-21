@@ -1,6 +1,6 @@
 # 16｜Orchestrator-first 最终实施计划与阶段门
 
-> 状态：已接受的实施基线；S0–S3 已完成离线阶段门，S4–S9 尚未实施，规定的真实验证尚未运行。
+> 状态：已接受的实施基线；S0–S4 已完成离线阶段门，S5–S9 尚未实施，规定的真实验证尚未运行。
 >
 > 更新时间：2026-08-21。
 >
@@ -48,13 +48,14 @@ Codex GPT Final Review
 | --- | --- | --- |
 | 确定性路由策略 | Implemented / offline tested | 已有分类、阶段路由和预算测试，但策略将因隐私默认拒绝而调整 |
 | 审批哈希 | Implemented / offline tested | S1 新合同完整绑定 task/route/context/policy；legacy 路径已增加 isolation hash，S5 endpoint 强证明和 S7 新 core 接入仍待完成 |
-| DeepSeek Direct Adapter | Implemented / mock tested | 当前 adapter cwd 已切到 isolated worktree；缺少 S4 独立 read/write capability 和 S5 endpoint 断言 |
+| DeepSeek Direct Adapter | Capability restricted / offline attack-tested | S4 manifest read、独立 write scope 与 structured patch 已接入；S5 endpoint/auth/model/protocol identity 仍待完成 |
 | Codex CLI planning/review | Implemented / architecture mismatch | 后台另起 Codex，不等于当前 GPT 主会话承担 Supervisor |
-| 主 working tree scope guard | Implemented / isolated post-hoc | executor 后置范围检查已在 worktree 内运行；S4 预防性 capability 与 S6 完整 gate 仍待完成 |
+| 主 working tree scope guard | Implemented / preventive + post-hoc | S4 Direct Adapter 预防性 capability 与 worktree 后置检查已接入；S6 完整 gate 仍待完成 |
 | 低写入状态持久化 | Implemented / offline tested | S2 已完成副作用前 checkpoint、幂等锁、原子写和 conservative recovery |
 | 原生 DeepSeek 菜单/profile | Implemented experiment / deprecated as default | 与 Orchestrator-first 正常体验冲突 |
 | Isolated worktree | Implemented / offline tested | run-scoped detached worktree、dirty evidence、ownership-safe lifecycle 和冲突检测已通过 synthetic repo 测试；不是 OS sandbox |
-| Real sandbox/capability boundary | Design only | 尚未实现 |
+| Direct Adapter capability boundary | Implemented / offline attack-tested | S4 本地工具 surface 失败关闭；不等于 OS sandbox |
+| OS sandbox / low-privilege process | Design only | Job Object/AppContainer/低权限账户仍为 TODO-03 |
 | Immutable RouteBinding | Contract implemented / not invoked | S1 类型/schema/hash 已离线验证；S5 才接入 endpoint/auth/model/protocol preflight |
 | Ambiguous paid-call handling | Implemented / offline tested | S2 timeout/reset/response lost → AMBIGUOUS/BLOCKED，禁止自动重发 |
 | EvidenceBundle | Design only | 尚未实现 |
@@ -538,6 +539,14 @@ GPT Final Review 只能返回：
 - mock tool 不能调用 shell/network。
 
 阶段门：攻击性单元测试证明模型只能访问 TaskPackage 显式能力范围。
+
+完成记录（2026-08-21）：S4 legacy bridge 改为分别审批 `readFiles`、`writeFiles` 和 `dataClassification`，`allowedFiles` 只由 write scope 派生。Direct DeepSeek code stage 只暴露 `list_manifest`、`read_file`、内存 `propose_patch`；所有 DeepSeek stage 在 S7 完整 policy 接线前只接受 public，非代码 stage 拒绝 filesystem grant。read 同时验证 exact manifest、physical path、junction/reparse、分类、大小、UTF-8、secret pattern、byte/hash；write 额外验证大小写精确 scope 与 preimage，并只允许一个 staged atomic replacement/create。`.git` 控制文件、credential/key/env/production dump、问号 glob、case alias、CRLF/binary/large、rename/delete/multi-file 全部失败关闭。
+
+TODO-01 结论：保持 structured `propose_patch`，不开放 generic/受限 writer。只有公开 Pilot 证明 patch 显著影响质量、且另一个 ADR 与完整 writer 攻击测试通过后才可重新评估。credential child 只获得最小 allowlist，且使用从验证后 `SystemRoot` 构造的绝对 PowerShell 路径；模型工具没有 shell、任意命令、package、GitHub/browser 或任意网络。
+
+零费用证据：TypeScript `--noEmit` 和 Vitest 15/15 files、169/169 tests 通过，详见 `docs/21-s4-safe-executor.md`。Windows 主机实际验证 junction parent/root alias；file symlink 创建受主机权限限制，POSIX symlink 与 Windows junction 共用的拒绝分支及真实 junction 已覆盖。任意 reparse tag、TOCTOU、OS sandbox、真实 provider transport 和 S5 route identity 仍未验证。
+
+S4 阶段门：PASS。结论仅限 Direct DeepSeek Adapter 的本地 capability surface 在 synthetic repo、mock fetch/provider 下通过攻击测试；不构成真实路由、OS sandbox 或 production readiness。
 
 ### S5｜Immutable RouteBinding 与 endpoint/auth/model preflight
 

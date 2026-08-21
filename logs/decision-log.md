@@ -73,3 +73,14 @@
 - 验证：TypeScript `--noEmit` 和 116/116 离线测试通过；覆盖 clean/dirty/untracked/rename/delete、base/ref、创建/清理中断、同步并发审批、跨 Router handoff、dead/ownerless/release-race recovery、auto/approve pre-write/junction root containment、READY residual、scope 双状态、同路径冲突、worktree `dist/` 隔离、cleanup ownership 和 Orchestrator 目录接入。全部为系统临时目录 synthetic repo 和 mock provider，未联网、未读真实 config/auth/DPAPI/env/credential，未运行 API/benchmark。
 - 边界：S1 六类合同/schema 未修改；worktree 不是 OS sandbox，S4 capability boundary 尚未实现；dirty overlay 仍为 TODO-02；S3 只提供 apply 前冲突 primitive，不执行 S8 apply。
 - 当前状态：S3 阶段门通过；S4 可开始。
+
+## 2026-08-21｜S4 manifest read、single structured patch 与最小环境
+
+- 决策：Direct DeepSeek 是唯一 MVP code executor；文件工具只保留 `list_manifest`、`read_file`、`propose_patch`，删除 broad `list_files` 与 generic `write_file`。模型没有 shell、任意命令、package、GitHub/browser 或任意工具网络。
+- 授权：legacy plan 分别审批 exact `readFiles`、`writeFiles` 和 `dataClassification`；`allowedFiles` 只由 write scope 派生。三者进入 plan/approval hash，derived manifest/grant 进入 request fingerprint。S7 完整 policy 接线前，所有 DeepSeek stage 只接受 public，非代码 stage 拒绝 filesystem grant。
+- read：exact manifest + public + physical containment + no symlink/junction/reparse + size/fatal UTF-8/no CR/NUL + sensitive path/content deny + current byte hash/length。统一拒绝 `.git` control、env/key/token/password/credential/secret/prod dump、UNC/device/ADS/Win device/case alias/`?` glob。
+- patch：TODO-01 固定一个内存 structured replacement/create；existing 要求 manifest+preimage，new 要求 approved exact path+existing parent+null preimage。Orchestrator 在 S2 async response validation 内 staged/apply，成功后才写 SUCCEEDED；失败/崩溃为 AMBIGUOUS/BLOCKED，不重发。rename/delete/multi-file/binary/CRLF/large 拒绝。
+- 环境/auth：credential child 使用 synthetic-injectable loader、显式最小环境，不继承 PATH；PowerShell 由验证后的 SystemRoot 构造绝对路径。auth 只进入 transport header，不进入模型 body/plan/持久状态。
+- 验证：TypeScript `--noEmit` 与 Vitest 15/15 files、169/169 tests 通过；全部为临时 synthetic repo/file、mock fetch/provider 和 synthetic credential/env。未读取真实配置/auth/DPAPI/env 值，未调用 API/benchmark。
+- 边界：S4 只证明本地 capability surface 离线失败关闭，不是 OS sandbox。endpoint/auth/model/protocol/redirect/RouteEvidence 属于 S5；quality/EvidenceBundle 属于 S6。
+- 当前状态：S4 阶段门通过；S5 可开始。

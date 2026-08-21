@@ -296,6 +296,10 @@ export interface PlanPacket {
   objective: string;
   nonGoals: string[];
   steps: string[];
+  readFiles: string[];
+  writeFiles: string[];
+  dataClassification: DataClassification;
+  /** @deprecated S4 derives this compatibility field from writeFiles. */
   allowedFiles: string[];
   constraints: string[];
   acceptance: string[];
@@ -310,6 +314,31 @@ export interface LegacyApprovalRecord {
   approvedAt: string;
   routeFingerprint: string;
   isolationHash: string;
+}
+
+/**
+ * Legacy S4 capability grant used by the Direct DeepSeek adapter until the S7
+ * core migration passes TaskPackage/RouteBinding objects end to end. These
+ * fields deliberately mirror the frozen S1 read/write boundaries without
+ * changing any S1 wire contract.
+ */
+export interface ExecutorManifestEntry {
+  path: string;
+  contentHash: string;
+  byteLength: number;
+  dataClassification: DataClassification;
+}
+
+export interface ExecutorCapabilityGrant {
+  readManifest: ExecutorManifestEntry[];
+  writeScope: string[];
+  maxFileBytes: number;
+}
+
+export interface StructuredPatchProposal {
+  path: string;
+  preimageHash: string | null;
+  replacement: string;
 }
 
 export interface CacheMetrics {
@@ -364,6 +393,7 @@ export interface ProviderRequest {
   sensitivity: SensitivityClass;
   workingDirectory?: string;
   allowedFiles?: string[];
+  executorCapabilities?: ExecutorCapabilityGrant;
   tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
 }
 
@@ -373,6 +403,7 @@ export interface ProviderResponse {
   provider: string;
   model: string;
   usage: UsageMetrics;
+  structuredPatches?: StructuredPatchProposal[];
   raw?: unknown;
 }
 

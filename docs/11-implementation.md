@@ -1,6 +1,6 @@
 # 11｜最小实现与 CLI
 
-> 历史实现说明：本文描述整改前的 TypeScript Phase 0/1 主体。S0 已于 2026-08-21 完成默认入口退役；S3 已把执行及其后阶段切到 isolated worktree，但 legacy planning 与尚未实现的 S4 capability boundary 仍不代表目标架构。当前执行基线见 `docs/16-orchestrator-first-implementation-plan.md`。
+> 历史实现说明：本文描述整改前的 TypeScript Phase 0/1 主体。S0 已于 2026-08-21 完成默认入口退役；S3 把执行及其后阶段切到 isolated worktree，S4 已完成 Direct DeepSeek 的离线 capability boundary。legacy planning/core 仍待 S7 迁移，route identity 与完整质量门仍分别属于 S5/S6。当前执行基线见 `docs/16-orchestrator-first-implementation-plan.md`。
 
 ## 已实现边界
 
@@ -24,7 +24,7 @@
 
 每个阶段都在 `src/policy.ts` 中显式指定模型、effort、输出 token、工具轮数、超时和修复次数。自动策略不产生 OpenAI `high/xhigh/max/pro` 或 DeepSeek `max`。敏感任务不进入 DeepSeek，改用 ephemeral Terra，且不生成可复用 cache key。
 
-OpenAI 阶段通过 Codex CLI 执行。启动前会读取 `codex exec --help` 并确认 `--ephemeral`；不支持时直接停止，不会回退为持久会话。受控 DeepSeek 执行器使用官方 Chat Completions API 和受限文件工具直连。native DeepSeek Responses profiles 已从默认路径退役，不是完整 Codex Agent 终端的受支持入口。
+OpenAI 阶段通过 Codex CLI 执行。启动前会读取 `codex exec --help` 并确认 `--ephemeral`；不支持时直接停止，不会回退为持久会话。受控 DeepSeek 执行器使用 Chat Completions transport；S4 工具面只有 manifest list/read 与内存 structured patch proposal，代码阶段才有文件 capability。native DeepSeek Responses profiles 已从默认路径退役，不是完整 Codex Agent 终端的受支持入口。transport 的 endpoint/auth/model/protocol 身份尚未通过 S5 preflight，不能把 mock transport 称为真实路由证据。
 
 DeepSeek 官方 V4 思考模式只提供关闭、`high` 和 `max`；`low/medium` 实际映射为 `high`。因此普通 Flash 执行和纯文本扩写明确关闭思考，复杂 Pro 使用 `high`，自动模式仍禁止 `max`。工具调用期间的 `reasoning_content` 只保留在内存消息链中并完整回传，阶段结束即释放。
 
@@ -44,7 +44,11 @@ DeepSeek 官方 V4 思考模式只提供关闭、`high` 和 `max`；`low/medium`
 
 ## 安全限制
 
-- `allowedFiles` 仅是 Phase 0 兼容字段。S1 新合同必须使用独立 `read_scope` / `write_scope`，并把二者、policy 和预算全部绑定到审批；旧 Orchestrator 接线留待后续阶段按边界迁移。
+- legacy plan 已分别审批 exact `readFiles`、`writeFiles` 和 public/private/restricted 分类；`allowedFiles` 只由 `writeFiles` 派生用于兼容/post-hoc scope guard，不能授权读取或 adapter 直接写入。S7 仍须把这条兼容桥替换为 S1 `TaskPackage` / `RouteBinding` / EffectivePolicy。
+- Direct DeepSeek 代码工具只允许 `list_manifest`、`read_file`、`propose_patch`。read 经过 lexical/physical path、junction/reparse、classification、size、UTF-8、secret pattern 与 hash 校验；proposal 不写盘，Orchestrator 只在 isolated worktree 内按 write scope/preimage 应用一个原子 replacement/create。
+- S4 MVP 拒绝 `.git`、`.env`、credential/key/production dump、private/secret 外发、问号 glob、case alias、CRLF/binary/large、rename/delete 和多文件 patch；不提供 generic writer、shell、package、GitHub、browser 或任意工具网络。
+- credential decrypt child 使用由校验后 `SystemRoot` 派生的绝对 PowerShell 路径和最小 environment，不继承 PATH；模型消息、plan 和持久状态不接收 auth secret。
+- 以上只证明 Direct DeepSeek 本地 capability surface 的离线失败关闭，不是 OS sandbox，也不代表 Codex/local adapter 具有同一边界。
 - 本地验证命令来自经用户批准的计划，但仍只应对可信项目运行。
 - 不提交 `.env`、API key、完整对话或 reasoning 内容。
 - 上游模型、API 或 Codex CLI 能力改变后，模型状态应回退到待认证。
