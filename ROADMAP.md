@@ -6,8 +6,8 @@
 | --- | --- | --- |
 | S0 | 已通过（2026-08-21） | 默认入口只保留 Orchestrator；旧 native 脚本移入 deprecated experimental |
 | S1 | 已通过（2026-08-21） | 六类独立合同、双维隐私、policy 收窄、规范化 hash 与严格 schema |
-| S2 | 可开始 | 分离 Workflow/Attempt，持久化副作用前检查点和 ambiguous 语义 |
-| S3 | 未开始 | 每个 run 使用 isolated Git worktree，保护主 workspace |
+| S2 | 已通过（2026-08-21） | 分离 Workflow/Attempt，持久化副作用前检查点、幂等锁和 ambiguous 语义 |
+| S3 | 可开始 | 每个 run 使用 isolated Git worktree，保护主 workspace |
 | S4 | 未开始 | Direct DeepSeek safe executor 与 read/write/network/env/command scope |
 | S5 | 未开始 | endpoint/auth/model/protocol preflight 与多源 RouteEvidence |
 | S6 | 未开始 | Local Quality Gate、secret scan、最终 diff 和 EvidenceBundle |

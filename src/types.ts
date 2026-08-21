@@ -13,7 +13,9 @@ export type ReasoningEffort = OpenAIReasoning | DeepSeekReasoning;
 export type DataClassification = "public" | "private" | "secret_restricted";
 export type ContractProvider = "openai-codex" | "deepseek" | "local";
 export type BillingMode = "prepaid" | "postpaid" | "subscription" | "unknown";
-export type AttemptStatus = "PREPARED" | "SENDING" | "SUCCEEDED" | "FAILED_BEFORE_SEND" | "AMBIGUOUS" | "CANCELLED";
+export type AttemptState = "PREPARED" | "SENDING" | "SUCCEEDED" | "FAILED_BEFORE_SEND" | "AMBIGUOUS" | "CANCELLED";
+/** S1 wire-name compatibility. WorkflowState and AttemptState are independent state machines. */
+export type AttemptStatus = AttemptState;
 export type FailureClass = "none" | "local_preflight" | "provider_rejected" | "transport_unknown" | "response_invalid" | "cancelled";
 
 export interface RequestBudget {
@@ -227,10 +229,31 @@ export type Stage =
   | "CLASSIFY" | "PLAN" | "TEXT_FRAME" | "TEXT_EXPAND" | "EXECUTE"
   | "VALIDATE" | "REVIEW" | "VISUAL_REVIEW" | "REPAIR" | "SOL_DIAGNOSIS";
 
+/** Orchestrator-first workflow state. Provider-call lifecycle belongs to AttemptState. */
 export type WorkflowState =
+  | "CREATED" | "PLANNING" | "AWAITING_APPROVAL" | "APPROVED"
+  | "WORKTREE_READY" | "EXECUTING" | "VALIDATING" | "REVIEW_PENDING"
+  | "REPAIR_REQUIRED" | "APPLY_PENDING" | "PASSED" | "BLOCKED" | "ABORTED";
+
+/** @deprecated Phase 0 workflow retained until the S7 core/CLI migration. */
+export type LegacyWorkflowState =
   | "INTAKE" | "PROFILED" | "PLANNING" | "WAITING_APPROVAL"
   | "EXECUTING" | "VALIDATING" | "REVIEWING" | "REPAIRING"
   | "SOL_DIAGNOSIS" | "WAITING_REAPPROVAL" | "COMPLETED" | "BLOCKED" | "ABORTED";
+
+export interface WorkflowRecord {
+  version: 1;
+  run_id: string;
+  task_id: string;
+  approval_hash: string;
+  state: WorkflowState;
+  attempt_ids: string[];
+  active_attempt_id: string | null;
+  blocked_reason: string | null;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface TaskProfile {
   kind: TaskKind;
@@ -262,7 +285,7 @@ export interface RouteDecision extends ReasoningProfile {
 export interface PersistenceProfile {
   ephemeral: boolean;
   retentionDays: number;
-  checkpointStates: WorkflowState[];
+  checkpointStates: LegacyWorkflowState[];
   maxMetadataBytes: number;
   persistEventStream: false;
 }
@@ -316,7 +339,7 @@ export interface RouteEvidence {
 export interface RunState {
   version: 1;
   taskId: string;
-  state: WorkflowState;
+  state: LegacyWorkflowState;
   profile: TaskProfile;
   plan?: PlanPacket;
   approval?: LegacyApprovalRecord;

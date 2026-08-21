@@ -25,6 +25,14 @@ describe("low-write state store", () => {
     const { store, value } = await fixture(); await store.save(value);
     expect(JSON.parse(await readFile(path.join(store.taskDir(value.taskId), "state.json"), "utf8")).state).toBe("WAITING_APPROVAL");
   });
+  it("does not persist raw provider result or expose storage paths", async () => {
+    const { store, value } = await fixture(); value.result = "Bearer mock-secret-value raw response";
+    await store.save(value);
+    const text = await readFile(path.join(store.taskDir(value.taskId), "state.json"), "utf8");
+    expect(text).not.toContain("mock-secret-value"); expect(text).not.toContain("raw response");
+    expect((await store.load(value.taskId)).result).toBeUndefined();
+    await expect(store.load("missing-task")).rejects.toMatchObject({ message: "Persistence failed during legacy state read" });
+  });
   it("dry-run cleanup does not remove data", async () => {
     const { store, value } = await fixture(); const old = new Date("2020-01-01"); value.updatedAt = old.toISOString(); await store.save(value);
     await utimes(store.taskDir(value.taskId), old, old);

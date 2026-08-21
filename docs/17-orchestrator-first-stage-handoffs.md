@@ -2,7 +2,7 @@
 
 > 用途：用户计划为每个实施阶段开启一个新的 Codex 主会话。本文提供共同上下文、阶段依赖、每阶段可直接复制的启动 Prompt 和结束交接要求。
 >
-> 状态：S0、S1 已于 2026-08-21 通过；S2 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
+> 状态：S0、S1、S2 已于 2026-08-21 通过；S3 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
 
 ## 一、所有新会话先读
 
@@ -12,11 +12,12 @@
 2. `docs/16-orchestrator-first-implementation-plan.md`
 3. 本文
 4. 已完成 S1 后读取 `docs/18-s1-data-contracts.md`
-5. `docs/08-decisions.md`
-6. `CHANGELOG.md`
-7. `logs/decision-log.md`
-8. `logs/routing-validation-log.md`
-9. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
+5. 已完成 S2 后读取 `docs/19-s2-attempt-persistence.md`
+6. `docs/08-decisions.md`
+7. `CHANGELOG.md`
+8. `logs/decision-log.md`
+9. `logs/routing-validation-log.md`
+10. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
 
 共同目标体验：
 
@@ -90,8 +91,8 @@ S10 有限真实 Pilot
 | --- | --- | --- | --- |
 | S0 | 已通过 | 2026-08-21：默认入口 Orchestrator-only；28/28 离线测试通过 | 保持退役边界，不回补 native switching |
 | S1 | 已通过 | 2026-08-21：六类合同、双维隐私、严格 schema；42/42 离线测试 | 保持合同边界，不在 provider 中临时绕过 |
-| S2 | 可开始 | S1 schema、ADR-013 与 `docs/18` | 实施 Workflow/Attempt 持久化与幂等 |
-| S3 | 未开始 | worktree 为 design only | S2 通过后开始 |
+| S2 | 已通过 | 2026-08-21：双层状态、原子 checkpoint、幂等锁、crash recovery；67/67 离线测试 | 保持 AMBIGUOUS 禁止自动重发 |
+| S3 | 可开始 | S2 状态转换与 crash matrix 见 `docs/19` | 实施 isolated worktree |
 | S4 | 未开始 | Direct Adapter 仅部分受限 | S3 通过后开始 |
 | S5 | 未开始 | endpoint mismatch 尚无 preflight | S4 通过后开始 |
 | S6 | 未开始 | 当前只有局部 scope/validation evidence | S5 通过后开始 |

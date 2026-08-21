@@ -6,6 +6,8 @@
 
 ### Added
 
+- S2 durable attempt executor：PREPARED/SENDING/SUCCEEDED 原子检查点、AMBIGUOUS/BLOCKED 恢复、task/approval 锁和稳定 attempt ID。
+- S2 crash/concurrency/provider-stage/atomic-write/redaction 离线测试矩阵，以及状态转换表和 crash matrix 文档。
 - S1 `TaskPackage`、`RouteBinding`、`ExecutionContext`、`ApprovalRecord`、`AttemptRecord` 和 `EvidenceBundle` 独立线协议类型。
 - 规范化 JSON 序列化、稳定 SHA-256、严格运行时解析器、独立 JSON Schema 入口和 hash-valid 合成示例。
 - `data_classification + egress_policy` 双维隐私、user/project policy 交集和 DeepSeek binding 默认拒绝规则。
@@ -28,6 +30,8 @@
 
 ### Changed
 
+- 当前 Orchestrator 的 planning/execution/validation/review/repair/diagnosis adapter 调用统一接入 S2 attempt executor；重复或并发 approve 不再重复调用 provider。
+- provider 响应原文、reasoning、绝对用户路径和 credential-shaped 错误不再进入长期状态；持久化错误只暴露脱敏逻辑操作。
 - read scope 与 write scope 在 S1 合同中彻底分离；旧 `allowedFiles` 只作为 Phase 0 兼容字段保留。
 - `task-packet.schema.json` 和 `run-report.schema.json` 降为新 TaskPackage/EvidenceBundle schema 的兼容别名。
 - S0 默认安装、Router Terminal、CLI help 和快捷方式只宣传 Orchestrator；`live-benchmark` 仍仅保留为显式命令。

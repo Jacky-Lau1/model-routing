@@ -457,6 +457,8 @@ GPT Final Review 只能返回：
 
 ### S2｜Workflow/Attempt 持久化与幂等语义
 
+> 完成记录（2026-08-21）：阶段门已通过。实现与状态转换/crash matrix 见 `docs/19-s2-attempt-persistence.md`；TypeScript 与 67/67 离线 mock 测试通过。S1 冻结字段/schema 未修改。
+
 目标：任何可能计费或写文件的动作，在发生前都有可恢复记录。
 
 实施内容：

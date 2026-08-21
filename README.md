@@ -2,7 +2,7 @@
 
 > 面向 Codex Desktop 的“强模型规划与验收 + 低成本模型受控执行”方案档案库。
 
-**状态：Orchestrator-first S0–S1 已完成；S2–S9 尚未实施。** 默认入口只暴露 Orchestrator；S1 已冻结 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 与双层 policy 的严格合同、规范化哈希和 JSON Schema。现有 provider 执行链仍是整改前 Phase 0/1，尚未接入这些新合同；worktree、真实权限边界、attempt 持久化、route preflight、质量门和 GPT 前台仍待后续阶段完成。在 S0–S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
+**状态：Orchestrator-first S0–S2 已完成；S3–S9 尚未实施。** 默认入口只暴露 Orchestrator；S1 已冻结严格合同、规范化哈希和 JSON Schema；S2 已实现独立 Workflow/Attempt 状态、PREPARED/SENDING/SUCCEEDED 检查点、AMBIGUOUS/BLOCKED、task/approval 幂等锁、原子写和统一脱敏，并接入当前 Orchestrator provider 调用。worktree、真实 capability 边界、route preflight、质量门和 GPT 前台仍待后续阶段完成。在 S0–S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
 
 ## 目标
 
@@ -31,6 +31,7 @@
 - [最终实施计划、阶段门与 TODO](docs/16-orchestrator-first-implementation-plan.md)
 - [分阶段新对话交接与 Prompt](docs/17-orchestrator-first-stage-handoffs.md)
 - [S1 数据合同、隐私与 Schema](docs/18-s1-data-contracts.md)
+- [S2 Attempt 持久化、幂等与 Crash Matrix](docs/19-s2-attempt-persistence.md)
 
 ## 当前入口与运行警告
 
@@ -52,9 +53,9 @@
 
 ## 继续实施
 
-实施已拆成一个阶段一个新对话。S0、S1 阶段门通过后，下一阶段是 S2 Workflow/Attempt 持久化与幂等语义。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。
+实施已拆成一个阶段一个新对话。S0–S2 阶段门通过后，下一阶段是 S3 Isolated Git Worktree。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。
 
-> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S2。先确认 S1 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/18、docs/08 和最新 logs。
+> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S3。先确认 S2 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/18、docs/19、docs/08 和最新 logs。
 
 在 GitHub 网页链接可用后，也可以直接提供仓库 URL。任何实施前都应重新核验上游 Codex 文档、模型价格、提供商 API 兼容性与当前版本限制。
 

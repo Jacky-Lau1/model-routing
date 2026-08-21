@@ -1,8 +1,10 @@
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { atomicRenameWithLocalRetry, PersistenceError } from "./attempt-persistence.js";
 import { DEFAULT_PERSISTENCE } from "./policy.js";
-import type { RunState, WorkflowState } from "./types.js";
+import { sanitizeForPersistence } from "./redaction.js";
+import type { LegacyWorkflowState, RunState } from "./types.js";
 
 export class StateStore {
   readonly root: string;
@@ -15,18 +17,26 @@ export class StateStore {
 
   async save(state: RunState, force = false): Promise<void> {
     if (!force && !DEFAULT_PERSISTENCE.checkpointStates.includes(state.state)) return;
-    const dir = this.taskDir(state.taskId);
-    await mkdir(dir, { recursive: true });
-    const data = `${JSON.stringify(state, null, 2)}\n`;
-    if (Buffer.byteLength(data) > DEFAULT_PERSISTENCE.maxMetadataBytes) throw new Error("Router metadata exceeds 10 MB task limit");
-    const target = path.join(dir, "state.json");
+    const persistent = { ...state };
+    delete persistent.result;
+    const safe = sanitizeForPersistence(persistent);
+    const dir = this.taskDir(safe.taskId);
     const temporary = path.join(dir, `.state.${randomUUID()}.tmp`);
-    await writeFile(temporary, data, { encoding: "utf8", flag: "wx" });
-    await rename(temporary, target);
+    let renamed = false;
+    try {
+      await mkdir(dir, { recursive: true });
+      const data = `${JSON.stringify(safe, null, 2)}\n`;
+      if (Buffer.byteLength(data) > DEFAULT_PERSISTENCE.maxMetadataBytes) throw new Error("metadata limit");
+      const target = path.join(dir, "state.json");
+      await writeFile(temporary, data, { encoding: "utf8", flag: "wx" });
+      await atomicRenameWithLocalRetry(temporary, target); renamed = true;
+    } catch { throw new PersistenceError("legacy state atomic write"); }
+    finally { if (!renamed) await rm(temporary, { force: true }).catch(() => undefined); }
   }
 
   async load(taskId: string): Promise<RunState> {
-    return JSON.parse(await readFile(path.join(this.taskDir(taskId), "state.json"), "utf8")) as RunState;
+    try { return sanitizeForPersistence(JSON.parse(await readFile(path.join(this.taskDir(taskId), "state.json"), "utf8")) as RunState); }
+    catch { throw new PersistenceError("legacy state read"); }
   }
 
   async list(): Promise<RunState[]> {
@@ -52,6 +62,6 @@ export class StateStore {
   }
 }
 
-export function transitionState(state: RunState, next: WorkflowState): RunState {
+export function transitionState(state: RunState, next: LegacyWorkflowState): RunState {
   return { ...state, state: next, updatedAt: new Date().toISOString() };
 }

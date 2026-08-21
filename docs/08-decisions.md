@@ -105,3 +105,13 @@
 - 隐私后果：未分类、无显式 user egress allow、过期授权和 `secret_restricted` 均不能构造 DeepSeek binding；`PRIVATE_THIRD_PARTY_ALLOWED` 只能作为便利输入规范化为 private + 独立 allow policy。
 - Policy 后果：project policy 只做 user policy 的 scope/egress 交集和更低预算；user deny 不能被仓库 policy 覆盖。无法保守证明 glob 子集时失败关闭。
 - 兼容后果：Phase 0 `PlanPacket`、`RouteDecision`、`LegacyApprovalRecord` 和 provider 调用暂不迁移；S1 不改变真实执行路径，后续阶段必须显式接入新合同。
+
+## ADR-014：S2 使用稳定 attempt ID、task/approval 文件锁与保守崩溃恢复
+
+- 日期：2026-08-21
+- 状态：接受
+- 决策：attempt ID 由 task、approval hash、stage、round 稳定派生；同一 task/approval 使用原子目录锁。`PREPARED` 和 `SENDING` 必须在调用前原子落盘，完整响应验证后才写 `SUCCEEDED`。重启发现 `SENDING` 一律改为 `AMBIGUOUS/BLOCKED`，不自动重发。
+- 原因：本地无法证明 timeout、reset、response lost 或崩溃边界之后供应商没有执行；稳定 ID 和锁可以防止本地重复副作用，但不能承诺供应商 exactly-once。
+- repair：round 至少为 1，因此创建新 attempt 并保留历史；幂等键相同但 request fingerprint 不同则失败关闭。
+- 持久化：同目录临时文件同步后 rename；Windows 短暂共享冲突只允许有限重试本地 rename，永不因此重试 provider。状态和错误统一脱敏，不保存 response body、raw payload 或 reasoning。
+- 兼容：S1 AttemptRecord 字段和 schema 未修改；Phase 0 工作流重命名为 `LegacyWorkflowState`，当前 Orchestrator 调用接入 S2 executor，完整 core/CLI 合同迁移仍属于 S7。

@@ -50,3 +50,13 @@
 - 兼容：旧 PlanPacket/RouteDecision/allowedFiles/provider invoke 不在 S1 迁移，避免提前实施 S2–S5；新合同尚未连接真实执行链。
 - 验证：TypeScript `--noEmit` 与 42/42 离线测试通过；JSON Schema 和 hash-valid examples 只含合成数据，未读取 env/config/credential，未调用 API。
 - 当前状态：S1 阶段门通过；S2 可开始。
+
+## 2026-08-21｜S2 attempt 检查点、幂等锁与保守恢复
+
+- 决策：WorkflowState 与 AttemptState 独立；task/approval 使用原子目录锁，attempt ID 稳定绑定 stage + round，重复请求返回既有记录。
+- Checkpoint：provider 调用前依次持久化 PREPARED、SENDING；只有响应完整、provider/model 基础证据和阶段结构验证后写 SUCCEEDED。
+- 失败：可证明未发送的本地错误才写 FAILED_BEFORE_SEND；timeout/reset/response lost、响应验证失败和重启遗留 SENDING 写 AMBIGUOUS，并使 workflow BLOCKED。
+- Repair：round >= 1 创建新 attempt，不覆盖历史；不同 fingerprint 复用同一幂等键时失败关闭。
+- 存储与隐私：临时文件 sync + rename；只对 Windows rename 共享冲突做有限本地重试。状态/error 统一脱敏，不持久化 response body/raw/reasoning 或用户绝对路径。
+- 兼容：未修改 S1 AttemptRecord 字段/schema；当前 Orchestrator adapter 调用已接入 S2 executor，未实现 worktree、MCP、endpoint/auth 强证明或真实 API。
+- 当前状态：S2 阶段门通过；S3 可开始。
