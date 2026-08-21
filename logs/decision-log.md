@@ -30,4 +30,13 @@
 - 决策：S0–S10 每个阶段使用独立 Codex 主会话，只有上一阶段门通过后进入下一阶段。
 - 原因：降低一次性 diff 和审查复杂度，防止在安全基础未完成时提前实现 MCP、Aider、并行或真实 Pilot。
 - 执行入口：`docs/17-orchestrator-first-stage-handoffs.md`。
-- 当前状态：阶段计划已形成；S0 尚未开始。
+- 当时状态：阶段计划已形成；S0 尚未开始。后续完成状态见 2026-08-21 条目。
+
+## 2026-08-21｜S0 退役默认 native provider 入口
+
+- 决策：默认快捷方式安装器和 Router Terminal 只保留 Orchestrator；CLI help 使用 Orchestrator-first 表述。Restore OpenAI、native DeepSeek Flash/Pro 与无 profile OpenAI Codex 不再是默认入口。
+- TODO-07 处理：native switch/profile 安装代码移入 `scripts/deprecated-experimental/native-codex/`，不删除。
+- 保留理由：作为已知 provider/model/endpoint 错配的协议兼容性考古材料；默认路径不引用、不执行、不支持。
+- 删除条件：Direct Adapter 完成所需协议验证，且这些脚本不再提供可复现价值。
+- 验证：临时目录、mock shortcut backend、dry-run、PowerShell parser、CLI/Terminal help、TypeScript typecheck 和 28 个离线测试通过；未运行 API、benchmark 或安装。
+- 当前状态：S0 阶段门通过；S1 可开始。

@@ -6,6 +6,8 @@
 
 ### Added
 
+- S0 默认快捷方式安装器的 `-DryRun`、临时目录和 mock shortcut backend 回归测试。
+- deprecated experimental native Codex 区域及其风险说明。
 - Orchestrator-first 最终实施计划：S0–S10 阶段门、双层状态、RouteBinding、worktree、安全执行器、EvidenceBundle、GPT 前台和 Pilot。
 - 分阶段新对话交接文档，包含每阶段可复制 Prompt、依赖、测试和维护要求。
 - 18 项可评估 TODO，记录当前默认、替代方案、风险、所需证据和改变条件。
@@ -22,6 +24,8 @@
 
 ### Changed
 
+- S0 默认安装、Router Terminal、CLI help 和快捷方式只宣传 Orchestrator；`live-benchmark` 仍仅保留为显式命令。
+- native provider switch 与 DeepSeek profile 安装脚本移至 `scripts/deprecated-experimental/native-codex/`，不再位于默认脚本区或默认调用链。
 - 项目主路线从 Desktop/native provider 切换收敛为 Orchestrator-first：GPT 常驻前台，DeepSeek 只做后台受控执行。
 - README 和 Roadmap 改为以 `docs/16` 的 S0–S10 为当前执行基线。
 - 明确 worktree 只是变更隔离边界，真实权限安全还需要 capability/sandbox。
@@ -29,7 +33,7 @@
 
 ### Deprecated
 
-- Desktop provider hot switch、native DeepSeek menu/profile 和 Restore OpenAI 作为默认方案。代码退役将在 S0 实施；当前不要作为正常入口使用。
+- Desktop provider hot switch、native DeepSeek menu/profile 和 Restore OpenAI 已从默认方案退役。保留的实验脚本不受支持，不得用于 S0-S9 验证。
 
 ## [0.1.0] - 2026-08-11
 

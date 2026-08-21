@@ -12,7 +12,7 @@ import { runLiveBenchmark } from "./live-benchmark.js";
 import type { Complexity, ProviderAdapter, Risk, SensitivityClass, TaskKind } from "./types.js";
 
 const program = new Command();
-program.name("route").description("Fail-closed Codex/DeepSeek model router").version("0.1.0");
+program.name("route").description("Orchestrator-first, fail-closed model router").version("0.1.0");
 
 function services(stateRoot?: string) {
   const store = new StateStore(stateRoot ? path.resolve(stateRoot) : undefined);
@@ -62,7 +62,7 @@ program.command("abort").argument("<task-id>").option("--state-root <path>")
 program.command("benchmark").option("--iterations <count>", "runs per routing case", "10")
   .action(options => { const result = runRoutingBenchmark(Number.parseInt(options.iterations, 10)); print(result); if (!result.passed) process.exitCode = 1; });
 
-program.command("live-benchmark").description("Run one real DeepSeek Flash coding benchmark and calculate quality/cost")
+program.command("live-benchmark").description("Explicit real-API benchmark; never part of install or default checks")
   .option("--keep-workspace", "retain the temporary fixture for debugging")
   .option("--output-directory <path>", "report directory")
   .action(async options => { const result = await runLiveBenchmark({ keepWorkspace: Boolean(options.keepWorkspace), outputDirectory: options.outputDirectory }); print(result); if (!result.acceptancePassed) process.exitCode = 1; });

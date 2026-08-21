@@ -2,7 +2,7 @@
 
 > 面向 Codex Desktop 的“强模型规划与验收 + 低成本模型受控执行”方案档案库。
 
-**状态：Orchestrator-first 整改已完成详细规划，代码仍处于旧 Phase 0/1 Draft。** 仓库已有 TypeScript 确定性控制层、审批状态机、Direct DeepSeek Adapter、低写入检查点和离线路由测试，但尚未完成 worktree 隔离、真实权限边界、完整 RouteBinding、ambiguous paid-call 语义、EvidenceBundle 和 GPT 前台接入。现有 native provider/menu 路径已被架构决定废弃为默认方案，等待 S0 代码退役。在 S0–S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
+**状态：Orchestrator-first S0 已完成；S1-S9 尚未实施。** 默认安装、CLI、终端和快捷方式现在只暴露 Orchestrator，不再安装或调用 Desktop provider switch、native DeepSeek profile 或 Restore OpenAI。仓库已有的 TypeScript 控制层仍处于整改前 Phase 0/1；worktree 隔离、真实权限边界、完整 RouteBinding、ambiguous paid-call 语义、EvidenceBundle 和 GPT 前台接入仍待后续阶段完成。在 S0-S9 和规定的真实 Pilot 完成前，不应宣称生产可用。
 
 ## 目标
 
@@ -31,11 +31,11 @@
 - [最终实施计划、阶段门与 TODO](docs/16-orchestrator-first-implementation-plan.md)
 - [分阶段新对话交接与 Prompt](docs/17-orchestrator-first-stage-handoffs.md)
 
-## 当前运行警告
+## 当前入口与运行警告
 
-Draft PR 中的现有 CLI 和脚本代表整改前实现，不应被理解为最终 Orchestrator-first 入口。尤其不要把 native DeepSeek menu/profile 或 Restore OpenAI 用作正常工作流。S0 尚未完成代码退役前，本仓库建议只做只读审查和明确授权的离线测试。
+`pnpm terminal` 和 `scripts/install-router-terminal.ps1` 只提供 Orchestrator 入口。快捷方式安装器支持 `-DryRun`，自动化测试必须同时传入临时 `-ShortcutDirectories` 和 `-ShortcutBackend Mock`，不得访问真实桌面、开始菜单或 Codex 用户目录。
 
-`live-benchmark` 会产生真实 API 请求和费用，不得在默认检查、阶段 S0–S9 或未获授权的会话中运行。现有 DPAPI/profile/native switch 脚本也不得用于测试整改方案。S0 将从默认路径移除这些入口。每个阶段允许运行的零费用命令和临时目录要求以 `docs/16`、`docs/17` 为准。
+旧 native provider/profile 脚本仅保留在 `scripts/deprecated-experimental/native-codex/` 供协议兼容性考古；它们不属于安装、默认检查或支持路径。`live-benchmark` 是会产生真实 API 请求和费用的显式命令，不会被安装器、默认检查或 S0 测试触发；没有当次明确授权时不得运行。
 
 ## 当前约束
 
@@ -48,11 +48,11 @@ Draft PR 中的现有 CLI 和脚本代表整改前实现，不应被理解为最
 7. 未分类数据默认禁止第三方；私有数据外发必须绑定 provider、任务、路径/内容和审批。
 8. LLM 调用状态不明时进入 `AMBIGUOUS/BLOCKED`，不自动重发可能计费的请求。
 
-## 建议的未来入口
+## 继续实施
 
-实施已拆成一个阶段一个新对话。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 S0–S10 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。[继续研发 Prompt](prompts/continue-model-routing.md) 提供当前 S0 简版入口。
+实施已拆成一个阶段一个新对话。S0 阶段门通过后，下一阶段是 S1 合同、隐私与 schema。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。[继续研发 Prompt](prompts/continue-model-routing.md) 提供当前 S1 简版入口。
 
-> 继续 `Jacky-Lau1/model-routing` Draft PR #1，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S0。先读 docs/14、docs/16、docs/17、docs/08 和最新 logs，确认范围后再写文件。
+> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S1。先确认 S0 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/08 和最新 logs。
 
 在 GitHub 网页链接可用后，也可以直接提供仓库 URL。任何实施前都应重新核验上游 Codex 文档、模型价格、提供商 API 兼容性与当前版本限制。
 

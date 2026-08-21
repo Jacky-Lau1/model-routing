@@ -87,3 +87,11 @@
 - 决策：MVP 使用 Direct DeepSeek API Adapter；Aider、native DeepSeek Codex profile、多 agent 和并行 worker留到 P2。
 - 原因：Direct Adapter 最容易验证实际 payload、endpoint、request ID、用量和工具范围。
 - 后果：第一版能力会更保守；是否采用 patch proposal 或受限 writer 按 `docs/16` TODO-01 的实测结果调整。
+
+## ADR-012：旧 native Codex 脚本移入 deprecated experimental
+
+- 日期：2026-08-21
+- 状态：接受
+- 决策：按 `docs/16` TODO-07 当前默认，保留 native provider switch 与 DeepSeek profile 安装代码，但移入 `scripts/deprecated-experimental/native-codex/`。默认安装器、Router Terminal、CLI help 和快捷方式不得引用它们，也不提供 Restore OpenAI。
+- 原因：这些脚本仍可用于协议兼容性考古，但会改写共享 Codex 配置或 profile/catalog，误用风险高；现阶段直接删除会丢失已知故障的可复现材料。
+- 后果：实验脚本不进入正常测试和支持路径；只做 PowerShell 语法解析，不执行。Direct Adapter 完成必要协议验证且不再有复现价值后，按 TODO-07 删除。

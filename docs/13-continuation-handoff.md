@@ -1,64 +1,49 @@
-# 13｜继续研发交接（2026-08-20）
+# 13｜继续研发交接（S0 收口版，2026-08-21）
 
-> 已被后续交接替代：本文保留 native menu 故障前的历史上下文，其中“先验证原生菜单”和相关安装建议不再执行。当前基线见 `docs/14-orchestrator-first-proposal.md`、`docs/16-orchestrator-first-implementation-plan.md` 和 `docs/17-orchestrator-first-stage-handoffs.md`。
-
-这是一份给后续 Codex 对话使用的简明交接记录。它描述当前仓库状态和安全边界，不包含 API Key、真实用户路径、设备标识或本机配置内容。
+> 本文是历史实现到 Orchestrator-first 的迁移交接。当前阶段基线见 `docs/16-orchestrator-first-implementation-plan.md`，逐阶段入口见 `docs/17-orchestrator-first-stage-handoffs.md`。
 
 ## 当前状态
 
-- GitHub 仓库：`Jacky-Lau1/model-routing`；开发分支为 `agent/implement-auto-model-router`；已有 Draft PR #1。
-- 最近提交：`7637166 Add native DeepSeek menu switcher`。
-- TypeScript 路由器已包含任务分类、审批状态机、预算/范围保护、低写入检查点、成本统计和 DeepSeek 适配器。
-- 本地离线测试最近一次为 24/24 通过。不要据此宣称生产可用。
-- 已实现 Windows 的原生菜单模式切换脚本：`scripts/switch-codex-native-mode.ps1`；快捷方式安装器：`scripts/install-router-terminal.ps1`。
-- DeepSeek 目录与认证材料均在仓库外。认证通过当前 Windows 用户的 DPAPI 命令式读取；仓库不保存 Key。
-- `auto` 是工作流路由入口，不是供应商模型，因此不能与 OpenAI/DeepSeek 模型混排到同一个 Codex 原生模型菜单。
+- 仓库：`Jacky-Lau1/model-routing`；S0 工作分支为 `codex/s0-orchestrator-first`。
+- S0 已把默认安装、Router Terminal、CLI help 和快捷方式收口为 Orchestrator-only。
+- 默认安装器不再创建 native DeepSeek、OpenAI Codex 或 Restore OpenAI 快捷方式。
+- native provider switch 与 profile 安装脚本已移到 `scripts/deprecated-experimental/native-codex/`，仅供协议兼容性考古，不受支持、不执行。
+- `route live-benchmark` 仍是显式命令；安装、默认检查和 S0-S9 测试不得触发。
+- TypeScript Orchestrator 主体仍是整改前 Phase 0/1。S1-S9 的合同、隐私、attempt、worktree、capability、route evidence、quality bundle 和 GPT 前台尚未完成。
 
-## 原生菜单实现边界
+## S0 的默认入口
 
-Codex Desktop 的原生菜单读取一个全局 provider。切换到 DeepSeek 时，菜单应显示 DeepSeek V4 Flash/Pro；恢复 OpenAI 时恢复原 OpenAI 菜单与会话视图。供应商切换会造成任务列表按登录/提供商分组而暂时隐藏，**不是删除任务**。
+- `pnpm terminal`：启动 Orchestrator 计划与审批流程。
+- `scripts/router-terminal.ps1 -Help`：只说明 Orchestrator。
+- `scripts/install-router-terminal.ps1`：只创建 `Codex Router - Orchestrator`。
+- 安装器测试必须显式传入临时 `-ShortcutDirectories`、`-ShortcutBackend Mock`，需要预览时再加 `-DryRun`。
 
-三个安全入口由安装脚本创建：
+`scripts/set-deepseek-key.ps1` 和 `scripts/install-store-codex.ps1` 没有被默认入口调用。前者仍服务于 Direct Adapter 的本机凭据兼容路径；后者会安装/同步 CLI、设置用户变量并访问认证文件，只能在单独明确授权时运行，不能作为 S0 测试。
 
-- `Codex Native Menu - DeepSeek Flash`
-- `Codex Native Menu - DeepSeek Pro`
-- `Codex Native Menu - Restore OpenAI`
+## 退役代码边界
 
-它们只原子更新全局 Codex 配置，不强制结束正在运行的 Codex。用户应自行正常关闭并重新打开应用。首次切换会备份 OpenAI 配置；恢复操作会保留对模型档位的合法改动，但若发现其它 Codex 设置被改动，会停止并要求人工处理，避免覆盖用户设置。
+deprecated experimental 目录中的脚本可能下载外部内容、写 Codex profile/catalog，或改写共享 Desktop provider 配置。S0 只对它们做静态和 PowerShell 语法检查，不执行、不修补、不承诺兼容。保留理由和删除条件见 ADR-012 与 `docs/16` TODO-07。
 
-## 继续研发时必须遵守
+## 后续会话必须遵守
 
-1. 未得到当前用户的明确许可，不读取、写入、复制、打印或提交任何本机 Codex/DeepSeek 配置、DPAPI 凭据、环境变量或日志运行产物。
-2. 不运行真实 API 测评、不产生费用，除非用户明确说“运行”。
-3. 不把私有源码、截图、完整聊天、密钥或用户目录发送给 DeepSeek 或其它第三方供应商。
-4. 不把 `high/xhigh/max` 当作自动默认；Sol 只用于高风险规划、重大歧义和二次失败诊断。
-5. 任何计划、允许修改范围、模型路由或验收条件出现实质变化，都必须重新等待用户批准。
-6. 发布 GitHub 前只暂存明确核对的文件，执行敏感信息扫描；不得提交 `.env`、凭据、运行日志、绝对用户路径或 API 响应原文。
+1. 不读取、写入、复制、打印或提交真实 Codex/DeepSeek 配置、DPAPI 凭据、环境变量值、认证缓存或密钥。
+2. 不运行真实 API、`live-benchmark` 或其它产生费用的操作，除非用户当次明确说“运行”。
+3. 脚本测试仅使用临时目录、mock path、mock provider/shortcut backend。
+4. 不把私有源码、截图、完整聊天或敏感内容发给第三方。
+5. 不修改 Router 核心状态机、RouteBinding 或隐私 schema，除非当前阶段明确要求。
+6. 不触碰或暂存 `dist/`、`node_modules/` 和无关用户文件。
+7. commit、push、PR 写操作分别需要当次明确授权。
 
-## 下一阶段建议顺序
+## 下一阶段
 
-1. 先确认原生 DeepSeek 菜单在用户机器上的实际可见行为（Flash/Pro 是否出现、切换后是否能发送请求、恢复 OpenAI 是否正常）。不要自动修改配置来“修复”。
-2. 根据 `docs/12-evaluation-plan.md` 审阅并敲定一次不含私有内容的 Pilot-30 测评任务集；目前只设计，不运行。
-3. 为原生菜单切换脚本增加可隔离的单元/集成测试，避免测试碰触真实 `%USERPROFILE%`。
-4. 再决定是否需要将 Desktop 的全局 provider 切换封装为插件或独立小工具；不要承诺原生菜单可同时显示多供应商模型。
-
-## 排障时需要用户提供什么
-
-让用户只提供以下**已脱敏**信息：
-
-- 出问题的入口名称、时间、预期与实际现象；
-- Codex 版本、Windows 版本；
-- 终端错误的前后 20 行（Key、Bearer 值、用户名、完整路径须替换为 `<REDACTED>`）；
-- 原生菜单的截图（隐藏任务标题、代码、文件路径和账号信息）；
-- 若涉及路由器，提供 `route status` 的脱敏输出和对应 `RunReport` 的指标字段，而非完整会话。
-
-不要要求用户粘贴 `config.toml`、DPAPI 文件、API Key、完整模型响应或项目私有源码。
+S1 只实施 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和 privacy/policy schema 基线。开始前先确认 S0 日志和阶段门仍通过，再使用 `docs/17` 的 S1 Prompt。S1 不运行真实 provider、不创建 worktree、不实现 MCP。
 
 ## 先读哪些文件
 
-- `docs/00-overview.md`：总体目标和阶段。
-- `docs/02-routing-policy.md`：模型和推理预算规则。
-- `docs/03-context-and-memory.md`：缓存、上下文与本地写入约束。
-- `docs/11-implementation.md`：当前最小实现。
-- `docs/12-evaluation-plan.md`：尚未执行的安全测评设计。
-- `docs/08-decisions.md` 与 `logs/`：既有决定和验证记录。
+1. `docs/14-orchestrator-first-proposal.md`
+2. `docs/16-orchestrator-first-implementation-plan.md`
+3. `docs/17-orchestrator-first-stage-handoffs.md`
+4. `docs/08-decisions.md`
+5. `README.md`、`ROADMAP.md`、`CHANGELOG.md`
+6. `logs/decision-log.md`、`logs/routing-validation-log.md`
+7. S1 涉及的源码、schema 和测试
