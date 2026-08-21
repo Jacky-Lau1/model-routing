@@ -305,6 +305,7 @@ export interface PlanPacket {
   acceptance: string[];
   validationCommands: string[];
   route: RouteDecision;
+  routeBinding: RouteBinding;
 }
 
 /** @deprecated Phase 0 compatibility record. New code uses ApprovalRecord. */
@@ -354,12 +355,56 @@ export interface UsageMetrics extends CacheMetrics {
   reasoningTokens: number;
 }
 
-export interface RouteEvidence {
+export type RequestIdSource = "body" | "header" | "body_and_header" | "cli_event" | "local" | "not_available";
+
+export interface RouteTransportObservation {
+  targetUrl: string;
+  responseUrl: string | null;
+  actualOrigin: string | null;
+  actualPath: string | null;
+  actualModel: string | null;
+  requestId: string | null;
+  requestIdSource: RequestIdSource;
+  bodyResponseId: string | null;
+  headerRequestId: string | null;
+  headerRequestIdName: "x-request-id" | "x-ds-request-id" | "request-id" | null;
+  status: number | null;
+  redirected: boolean | null;
+  routeTupleVerified: boolean;
+  failureReason: string | null;
+}
+
+export interface ProviderRouteEvidence {
+  routeBindingHash: string | null;
+  adapterId: string;
+  expectedProvider: Provider;
+  expectedModel: string;
+  expectedOrigin: string | null;
+  expectedPath: string | null;
+  actualOrigin: string | null;
+  actualPath: string | null;
+  actualModel: string | null;
+  wireProtocol: RouteBinding["wire_protocol"] | null;
+  authAlias: string | null;
+  requestId: string | null;
+  requestIds: string[];
+  bodyResponseIds: Array<string | null>;
+  headerRequestIds: Array<string | null>;
+  requestIdSource: RequestIdSource;
+  redirectPolicy: "manual_error" | "not_observable" | "local";
+  redirected: boolean | null;
+  routeTupleVerified: boolean;
+  evidenceComplete: boolean;
+  unverifiedReasons: string[];
+  verificationStatus: "route_tuple_verified_peer_unobserved" | "incomplete" | "local";
+  observations: RouteTransportObservation[];
+  peerVerification: "not_observable" | "local";
+  proxyVerification: "not_observable" | "local";
+}
+
+export interface RouteEvidence extends ProviderRouteEvidence {
   expectedProvider: Provider;
   actualProvider: string;
-  expectedModel: string;
-  actualModel: string;
-  requestId: string;
   verified: boolean;
   usage: UsageMetrics;
   normalizedEquivalentUsd?: number;
@@ -394,20 +439,24 @@ export interface ProviderRequest {
   workingDirectory?: string;
   allowedFiles?: string[];
   executorCapabilities?: ExecutorCapabilityGrant;
+  routeBinding?: RouteBinding;
   tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
 }
 
 export interface ProviderResponse {
   text: string;
-  requestId: string;
+  requestId: string | null;
   provider: string;
   model: string;
   usage: UsageMetrics;
+  routeEvidence?: ProviderRouteEvidence;
   structuredPatches?: StructuredPatchProposal[];
   raw?: unknown;
 }
 
 export interface ProviderAdapter {
   readonly provider: Provider;
+  readonly adapterId: string;
+  preflight?(request: ProviderRequest): void | Promise<void>;
   invoke(request: ProviderRequest): Promise<ProviderResponse>;
 }

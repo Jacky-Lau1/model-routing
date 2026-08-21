@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import type { ProviderAdapter, ProviderRequest, ProviderResponse } from "../types.js";
+import { LOCAL_ADAPTER_ID } from "../route-preflight.js";
 
 export class LocalValidationAdapter implements ProviderAdapter {
   readonly provider = "local" as const;
+  readonly adapterId = LOCAL_ADAPTER_ID;
   async invoke(request: ProviderRequest): Promise<ProviderResponse> {
     const commands = request.dynamicInput.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
     const results: Array<{ command: string; code: number; output: string }> = [];

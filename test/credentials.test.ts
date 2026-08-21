@@ -1,18 +1,19 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildCredentialSubprocessEnvironment, loadDeepSeekApiKey, resolveWindowsPowerShell } from "../src/credentials.js";
+import { DEEPSEEK_DPAPI_AUTH_ALIAS, DEEPSEEK_ENV_AUTH_ALIAS } from "../src/route-preflight.js";
 
 describe("S4 credential environment boundary", () => {
   it("returns an explicit synthetic key without invoking the DPAPI dependency", () => {
     const decrypt = vi.fn();
-    expect(loadDeepSeekApiKey({ DEEPSEEK_API_KEY: "synthetic-key" }, { platform: "win32", fileExists: () => true, decrypt })).toBe("synthetic-key");
+    expect(loadDeepSeekApiKey(DEEPSEEK_ENV_AUTH_ALIAS, { DEEPSEEK_API_KEY: "synthetic-key" }, { platform: "win32", fileExists: () => true, decrypt })).toBe("synthetic-key");
     expect(decrypt).not.toHaveBeenCalled();
   });
 
   it("rejects control characters and oversized credential values", () => {
-    expect(() => loadDeepSeekApiKey({ DEEPSEEK_API_KEY: "synthetic\nheader" }, { platform: "linux" })).toThrow(/invalid/);
-    expect(() => loadDeepSeekApiKey({ DEEPSEEK_API_KEY: "x".repeat(513) }, { platform: "linux" })).toThrow(/invalid/);
-    expect(loadDeepSeekApiKey({ DEEPSEEK_API_KEY: "   " }, { platform: "linux" })).toBeUndefined();
+    expect(() => loadDeepSeekApiKey(DEEPSEEK_ENV_AUTH_ALIAS, { DEEPSEEK_API_KEY: "synthetic\nheader" }, { platform: "linux" })).toThrow(/invalid/);
+    expect(() => loadDeepSeekApiKey(DEEPSEEK_ENV_AUTH_ALIAS, { DEEPSEEK_API_KEY: "x".repeat(513) }, { platform: "linux" })).toThrow(/invalid/);
+    expect(loadDeepSeekApiKey(DEEPSEEK_ENV_AUTH_ALIAS, { DEEPSEEK_API_KEY: "   " }, { platform: "linux" })).toBeUndefined();
   });
 
   it("passes only an explicit allowlist to the synthetic decrypt dependency", () => {
@@ -37,7 +38,7 @@ describe("S4 credential environment boundary", () => {
       expect(executable).toBe("C:\\SyntheticWindows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
       return "synthetic-decrypted-key";
     });
-    expect(loadDeepSeekApiKey(environment, { platform: "win32", fileExists: () => true, decrypt })).toBe("synthetic-decrypted-key");
+    expect(loadDeepSeekApiKey(DEEPSEEK_DPAPI_AUTH_ALIAS, environment, { platform: "win32", fileExists: () => true, decrypt })).toBe("synthetic-decrypted-key");
     expect(decrypt).toHaveBeenCalledOnce();
   });
 
@@ -46,10 +47,19 @@ describe("S4 credential environment boundary", () => {
     const built = buildCredentialSubprocessEnvironment(environment, "C:\\SyntheticSecret\\value.dpapi");
     expect(Object.keys(built).sort()).toEqual(["CODEX_ROUTER_SECRET_PATH", "SystemRoot"]);
     expect(resolveWindowsPowerShell(built)).toBe("C:\\SyntheticWindows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
-    expect(() => loadDeepSeekApiKey(environment, {
+    expect(() => loadDeepSeekApiKey(DEEPSEEK_DPAPI_AUTH_ALIAS, environment, {
       platform: "win32", fileExists: () => true,
       decrypt: () => { throw new Error("synthetic key and physical path must not escape"); },
     })).toThrow("Unable to decrypt the stored DeepSeek API Key for the current Windows user");
+  });
+
+  it("resolves exactly one approved alias and never falls back across sources", () => {
+    const decrypt = vi.fn(() => "synthetic-decrypted-key");
+    const environment = { DEEPSEEK_API_KEY: "synthetic-env-key", LOCALAPPDATA: "C:\\SyntheticLocal", SystemRoot: "C:\\SyntheticWindows" };
+    expect(loadDeepSeekApiKey(DEEPSEEK_ENV_AUTH_ALIAS, environment, { platform: "win32", fileExists: () => true, decrypt })).toBe("synthetic-env-key");
+    expect(decrypt).not.toHaveBeenCalled();
+    expect(() => loadDeepSeekApiKey("openai-cross-provider", environment, { platform: "win32", fileExists: () => true, decrypt })).toThrow(/alias/);
+    expect(decrypt).not.toHaveBeenCalled();
   });
 
   it("rejects missing, relative, UNC, or traversal-bearing Windows roots", () => {

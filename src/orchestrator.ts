@@ -5,11 +5,13 @@ import { AttemptPersistence } from "./attempt-persistence.js";
 import { approvePlan, assertApproval } from "./approval.js";
 import { stableHash } from "./canonical.js";
 import { classifyTask } from "./classifier.js";
+import { assertRouteBinding } from "./contracts.js";
 import { buildPrompt } from "./context.js";
 import { estimateEquivalentUsd, PRICING_CATALOG_VERSION } from "./cost.js";
 import { StateStore, transitionState } from "./persistence.js";
 import { decideRoute } from "./policy.js";
 import { redactError } from "./redaction.js";
+import { adapterIdFor, buildLegacyRouteBinding, freezeRouteBinding, preflightRouteBinding } from "./route-preflight.js";
 import { applyStructuredPatches, buildExecutorCapabilityGrant } from "./safe-executor.js";
 import { assertLegacyTransition, canLegacyTransition } from "./state-machine.js";
 import { assertAllowedChanges, snapshotWorkingTree } from "./scope-guard.js";
@@ -69,12 +71,15 @@ export class RouterOrchestrator {
     }
     if (!response || !draft) return this.store.load(taskId);
     const executionStage = profile.kind === "text" ? "TEXT_EXPAND" : "EXECUTE";
+    const readFiles = requiredArray(draft.readFiles, "readFiles");
+    const writeFiles = requiredArray(draft.writeFiles, "writeFiles");
+    const executionRoute = decideRoute(executionStage, profile);
     const plan: PlanPacket = {
       version: 1, taskId, objective, nonGoals: draft.nonGoals ?? [], steps: requiredArray(draft.steps, "steps"),
-      readFiles: requiredArray(draft.readFiles, "readFiles"), writeFiles: requiredArray(draft.writeFiles, "writeFiles"),
-      dataClassification: draft.dataClassification, allowedFiles: requiredArray(draft.writeFiles, "writeFiles"), constraints: draft.constraints ?? [],
+      readFiles, writeFiles,
+      dataClassification: draft.dataClassification, allowedFiles: [...writeFiles], constraints: draft.constraints ?? [],
       acceptance: requiredArray(draft.acceptance, "acceptance"), validationCommands: draft.validationCommands ?? [],
-      route: decideRoute(executionStage, profile),
+      route: executionRoute, routeBinding: buildLegacyRouteBinding(executionRoute, readFiles, writeFiles),
     };
     state = addResponse({ ...state, plan }, planningRoute, response);
     state = move(state, "WAITING_APPROVAL");
@@ -95,6 +100,7 @@ export class RouterOrchestrator {
     if (state.state !== "WAITING_APPROVAL" && state.state !== "WAITING_REAPPROVAL") return state;
     if (!state.plan) throw new Error("Task has no plan");
     const plan = state.plan;
+    assertRouteBinding(plan.routeBinding);
     const runId = runIdFor(taskId);
     let approvalHash: string | undefined;
     let lease: WorktreeLease | undefined;
@@ -118,7 +124,7 @@ export class RouterOrchestrator {
       const isolatedDirectory = lease.checkout_directory;
       const scopeBefore = await snapshotWorkingTree(isolatedDirectory);
       const execution = await this.invokeExecution(state, plan.route, isolatedDirectory, "Perform only the approved plan. Respect allowed files and stop conditions.");
-      if (!execution) return this.store.load(taskId);
+      if (!execution) throw new Error("Execution attempt did not produce a reusable response; inspect the durable attempt before any retry");
       const scopeAfter = await snapshotWorkingTree(isolatedDirectory);
       assertAllowedChanges(scopeBefore, scopeAfter, plan.writeFiles);
       state = addResponse({ ...state, attempts: state.attempts + 1, result: execution.text }, plan.route, execution);
@@ -163,13 +169,14 @@ export class RouterOrchestrator {
 
   private async invokeExecution(state: RunState, route: RouteDecision, projectDirectory: string, instruction: string): Promise<ProviderResponse | undefined> {
     if (!state.plan || !state.approval) throw new Error("Missing plan or approval"); assertApproval(state.plan, state.approval, state.approval.isolationHash);
+    const routeBinding = freezeRouteBinding(state.plan.routeBinding);
     if (route.provider === "deepseek" && state.plan.dataClassification !== "public") throw new Error("Legacy DeepSeek execution requires an explicitly approved public classification");
     const codeExecution = route.stage === "EXECUTE" || route.stage === "REPAIR";
     const prompt = buildPrompt(route.stage, instruction, "Return a concise execution summary and evidence.", JSON.stringify({ readFiles: state.plan.readFiles, writeFiles: state.plan.writeFiles, constraints: state.plan.constraints }), JSON.stringify(state.plan), state.profile.sensitivity);
     const executorCapabilities = route.provider === "deepseek" && codeExecution
       ? await buildExecutorCapabilityGrant(projectDirectory, state.plan.readFiles, state.plan.writeFiles, state.plan.dataClassification)
       : undefined;
-    const request = { stage: route.stage, route, ...prompt, sensitivity: state.profile.sensitivity, workingDirectory: projectDirectory, allowedFiles: state.plan.writeFiles, executorCapabilities } satisfies ProviderRequest;
+    const request = { stage: route.stage, route, routeBinding, ...prompt, sensitivity: state.profile.sensitivity, workingDirectory: projectDirectory, allowedFiles: state.plan.writeFiles, executorCapabilities } satisfies ProviderRequest;
     const tracked = route.stage === "REPAIR" ? this.attempts.repair.bind(this.attempts) : this.attempts.execute.bind(this.attempts);
     return this.invokeTracked(state, this.modelAdapter, request, {
       approvalHash: executionApprovalHash(state.plan, state.approval.isolationHash), round: route.stage === "REPAIR" ? state.repairAttempts + 1 : 0,
@@ -267,14 +274,21 @@ export class RouterOrchestrator {
     };
     const execute = options.tracked ?? this.attempts.execute.bind(this.attempts);
     const result = await execute(attemptRequest, {
+      prepare: async () => {
+        if (request.routeBinding) preflightRouteBinding(request.routeBinding, request.route, adapterIdFor(request.route.provider));
+        if (request.routeBinding && !adapter.preflight) throw new Error("Bound provider adapter does not implement route preflight");
+        await adapter.preflight?.(request);
+      },
       send: () => adapter.invoke(request),
       validate: async response => {
         if (typeof response.text !== "string" || response.text.length === 0) throw new Error("Provider response was incomplete");
         if (response.provider !== request.route.provider || response.model !== request.route.model) throw new Error("Provider response identity did not match the approved route");
+        if (!response.requestId) throw new Error("Provider request ID was unavailable; complete route evidence is required");
+        if (request.routeBinding) assertProviderRouteEvidence(request, response);
         await options.validate?.(response);
         return {
-          complete: true, provider_request_id: response.requestId || "unreported", response_model: response.model,
-          response_origin: `unverified://${response.provider}`, usage: {
+          complete: true, provider_request_id: response.requestId, response_model: response.model,
+          response_origin: response.routeEvidence?.actualOrigin ?? "not_observable", usage: {
             input_tokens: response.usage.inputTokens, output_tokens: response.usage.outputTokens, reasoning_tokens: response.usage.reasoningTokens,
           },
         };
@@ -287,7 +301,20 @@ export class RouterOrchestrator {
 function move(state: RunState, next: LegacyWorkflowState): RunState { assertLegacyTransition(state.state, next); return transitionState(state, next); }
 function parseJson<T>(text: string): T { const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]; const source = fenced ?? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1); try { return JSON.parse(source) as T; } catch { throw new Error("Model output was not valid JSON"); } }
 function requiredArray(value: string[] | undefined, name: string): string[] { if (!Array.isArray(value) || value.length === 0) throw new Error(`Plan field ${name} must be a non-empty array`); return value; }
-function evidence(route: RouteDecision, response: ProviderResponse) { const cost = estimateEquivalentUsd(route.model, response.usage); return { expectedProvider: route.provider, actualProvider: response.provider, expectedModel: route.model, actualModel: response.model, requestId: response.requestId, verified: response.provider === route.provider && response.model === route.model, usage: response.usage, normalizedEquivalentUsd: cost, pricingCatalogVersion: cost === undefined ? undefined : PRICING_CATALOG_VERSION }; }
+function evidence(route: RouteDecision, response: ProviderResponse) {
+  const cost = estimateEquivalentUsd(route.model, response.usage);
+  const transport = response.routeEvidence ?? {
+    routeBindingHash: null, adapterId: `${route.provider}-legacy`, expectedProvider: route.provider,
+    expectedModel: route.model, expectedOrigin: null, expectedPath: null, actualOrigin: null, actualPath: null,
+    actualModel: response.model, wireProtocol: null, authAlias: null, requestId: response.requestId,
+    requestIds: response.requestId ? [response.requestId] : [], bodyResponseIds: [], headerRequestIds: [], requestIdSource: response.requestId ? "cli_event" as const : "not_available" as const,
+    redirectPolicy: "not_observable" as const, redirected: null, routeTupleVerified: false, evidenceComplete: false,
+    unverifiedReasons: ["transport_route_not_observable"], observations: [],
+    verificationStatus: "incomplete" as const,
+    peerVerification: "not_observable" as const, proxyVerification: "not_observable" as const,
+  };
+  return { ...transport, actualProvider: response.provider, verified: transport.verificationStatus === "local", usage: response.usage, normalizedEquivalentUsd: cost, pricingCatalogVersion: cost === undefined ? undefined : PRICING_CATALOG_VERSION };
+}
 function addResponse(state: RunState, route: RouteDecision, response: ProviderResponse): RunState { const item = evidence(route, response); return { ...state, routeEvidence: [...(state.routeEvidence ?? []), item], usage: mergeUsage(state.usage, response.usage), normalizedEquivalentUsd: item.normalizedEquivalentUsd === undefined ? state.normalizedEquivalentUsd : Math.round(((state.normalizedEquivalentUsd ?? 0) + item.normalizedEquivalentUsd) * 1e9) / 1e9 }; }
 function mergeUsage(a: UsageMetrics | undefined, b: UsageMetrics): UsageMetrics { const base = a ?? { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 }; return Object.fromEntries(Object.keys(base).map(key => [key, base[key as keyof UsageMetrics] + b[key as keyof UsageMetrics]])) as unknown as UsageMetrics; }
 function projectSummary(directory?: string): string { return JSON.stringify({ platform: process.platform, project: path.basename(directory ?? process.cwd()), sensitivePathsExcluded: true }); }
@@ -298,8 +325,17 @@ function requiredIsolationHash(state: RunState): string { if (!state.approval?.i
 function providerRequestFingerprint(request: ProviderRequest): string { return stableHash({
   stage: request.stage, route: request.route, stable_prefix: request.stablePrefix, project_summary: request.projectSummary,
   dynamic_input: request.dynamicInput, sensitivity: request.sensitivity, allowed_files: request.allowedFiles ?? [],
-  executor_capabilities: request.executorCapabilities ?? null, tools: request.tools ?? [],
+  route_binding: request.routeBinding ?? null, executor_capabilities: request.executorCapabilities ?? null, tools: request.tools ?? [],
 }); }
+function assertProviderRouteEvidence(request: ProviderRequest, response: ProviderResponse): void {
+  const binding = request.routeBinding!; const item = response.routeEvidence;
+  if (!item || item.routeBindingHash !== binding.route_binding_hash || item.adapterId !== binding.adapter_id) throw new Error("Provider route evidence was missing or bound to a different adapter");
+  if (item.expectedProvider !== binding.provider_id || item.expectedModel !== binding.model_id || item.expectedOrigin !== binding.endpoint_origin || item.expectedPath !== binding.endpoint_path || item.wireProtocol !== binding.wire_protocol || item.authAlias !== binding.auth_alias) throw new Error("Provider route evidence did not match the approved binding");
+  if (!item.routeTupleVerified || !item.evidenceComplete || item.verificationStatus !== "route_tuple_verified_peer_unobserved" || item.peerVerification !== "not_observable" || item.proxyVerification !== "not_observable" || item.unverifiedReasons.join("|") !== "network_peer_not_observable|proxy_not_observable" || item.actualOrigin !== binding.endpoint_origin || item.actualPath !== binding.endpoint_path || item.actualModel !== binding.model_id || item.redirected !== false) throw new Error("Provider route tuple was not completely verified");
+  if (!item.requestId || item.requestId !== response.requestId || !item.requestIds.includes(item.requestId)) throw new Error("Provider request ID evidence was incomplete");
+  const targetUrl = new URL(binding.endpoint_path, `${binding.endpoint_origin}/`).href;
+  if (item.requestIds.length !== item.observations.length || item.bodyResponseIds.length !== item.observations.length || item.headerRequestIds.length !== item.observations.length || item.observations.some((observation, index) => !observation.routeTupleVerified || observation.failureReason !== null || observation.targetUrl !== targetUrl || observation.responseUrl !== targetUrl || observation.status === null || observation.status < 200 || observation.status >= 300 || observation.actualOrigin !== binding.endpoint_origin || observation.actualPath !== binding.endpoint_path || observation.actualModel !== binding.model_id || observation.redirected !== false || !observation.requestId || observation.requestId !== item.requestIds[index] || observation.bodyResponseId !== item.bodyResponseIds[index] || observation.headerRequestId !== item.headerRequestIds[index])) throw new Error("One or more provider transport turns lacked complete route evidence");
+}
 function validateDraftPlan(value: DraftPlan): void {
   requiredArray(value.steps, "steps"); requiredArray(value.readFiles, "readFiles"); requiredArray(value.writeFiles, "writeFiles"); requiredArray(value.acceptance, "acceptance");
   if (!value || !["public", "private", "secret_restricted"].includes(value.dataClassification)) throw new Error("Plan field dataClassification is invalid");

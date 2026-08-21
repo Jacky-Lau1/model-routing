@@ -9,8 +9,8 @@
 | S2 | 已通过（2026-08-21） | 分离 Workflow/Attempt，持久化副作用前检查点、幂等锁和 ambiguous 语义 |
 | S3 | 已通过（2026-08-21） | run-scoped isolated Git worktree、external roots、dirty evidence、可恢复生命周期/归属校验及 apply 前冲突检测 |
 | S4 | 已通过（2026-08-21） | Direct DeepSeek manifest-only read、独立 write scope、single structured patch、最小 env/command/tool-network surface |
-| S5 | 可开始 | endpoint/auth/model/protocol preflight 与多源 RouteEvidence |
-| S6 | 未开始 | Local Quality Gate、secret scan、最终 diff 和 EvidenceBundle |
+| S5 | 已通过（2026-08-21） | immutable legacy RouteBinding、Direct mock transport 逐轮 RouteEvidence、redirect/request-ID fail-closed；Codex CLI bound transport 不可观测时发送前停止 |
+| S6 | 可开始 | Local Quality Gate、secret scan、最终 diff 和 EvidenceBundle |
 | S7 | 未开始 | Core CLI、STDIO MCP 和 thin Codex skill 前台接入 |
 | S8 | 未开始 | GPT 三态 Final Review、一次 repair 和受控 apply |
 | S9 | 未开始 | 全 mock、临时 repo 的零费用端到端认证 |

@@ -4,12 +4,16 @@ import { once } from "node:events";
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RouterOrchestrator } from "../src/orchestrator.js";
 import { AttemptPersistence } from "../src/attempt-persistence.js";
+import { createRouteBinding } from "../src/contracts.js";
 import { StateStore } from "../src/persistence.js";
 import { GitWorktreeManager } from "../src/worktree.js";
-import type { ProviderAdapter, ProviderRequest, ProviderResponse } from "../src/types.js";
+import { DeepSeekChatAdapter } from "../src/providers/deepseek-chat.js";
+import { RoutingProviderAdapter } from "../src/providers/routing.js";
+import { DEEPSEEK_ENDPOINT_ORIGIN, DEEPSEEK_ENDPOINT_PATH } from "../src/route-preflight.js";
+import type { ProviderAdapter, ProviderRequest, ProviderResponse, RouteBinding } from "../src/types.js";
 
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
@@ -17,6 +21,8 @@ const usage = { inputTokens: 10, outputTokens: 5, reasoningTokens: 1, cachedInpu
 
 class MockModel implements ProviderAdapter {
   readonly provider = "openai-codex" as const;
+  readonly adapterId = "synthetic-multi-provider";
+  preflight(_request: ProviderRequest): void {}
   async invoke(request: ProviderRequest): Promise<ProviderResponse> {
     const text = request.stage === "PLAN"
       ? JSON.stringify({ steps: ["edit parser"], readFiles: ["src/parser.ts"], writeFiles: ["src/parser.ts"], dataClassification: "public", constraints: ["no API change"], acceptance: ["tests pass"], validationCommands: ["npm test"] })
@@ -24,12 +30,28 @@ class MockModel implements ProviderAdapter {
     const structuredPatches = request.route.provider === "deepseek" && (request.stage === "EXECUTE" || request.stage === "REPAIR")
       ? [{ path: "src/parser.ts", preimageHash: createHash("sha256").update(await readFile(path.join(request.workingDirectory!, "src", "parser.ts"))).digest("hex"), replacement: "export const parser = 2;\n" }]
       : undefined;
-    return { text, requestId: request.stage, provider: request.route.provider, model: request.route.model, usage, structuredPatches };
+    return { text, requestId: request.stage, provider: request.route.provider, model: request.route.model, usage, structuredPatches, routeEvidence: mockRouteEvidence(request, request.stage) };
   }
 }
 class MockLocal implements ProviderAdapter {
   readonly provider = "local" as const;
+  readonly adapterId = "local-validation";
   async invoke(request: ProviderRequest): Promise<ProviderResponse> { return { text: JSON.stringify({ passed: true, results: [] }), requestId: "local", provider: "local", model: request.route.model, usage: { ...usage, inputTokens: 0, outputTokens: 0 } }; }
+}
+
+function mockRouteEvidence(request: ProviderRequest, requestId: string) {
+  if (!request.routeBinding) return undefined;
+  const binding = request.routeBinding; const targetUrl = `${binding.endpoint_origin}${binding.endpoint_path}`;
+  return {
+    routeBindingHash: binding.route_binding_hash, adapterId: binding.adapter_id,
+    expectedProvider: binding.provider_id, expectedModel: binding.model_id, expectedOrigin: binding.endpoint_origin, expectedPath: binding.endpoint_path,
+    actualOrigin: binding.endpoint_origin, actualPath: binding.endpoint_path, actualModel: binding.model_id,
+    wireProtocol: binding.wire_protocol, authAlias: binding.auth_alias, requestId, requestIds: [requestId], bodyResponseIds: [requestId], headerRequestIds: [null], requestIdSource: "body" as const,
+    redirectPolicy: "manual_error" as const, redirected: false, routeTupleVerified: true, evidenceComplete: true,
+    unverifiedReasons: ["network_peer_not_observable", "proxy_not_observable"], verificationStatus: "route_tuple_verified_peer_unobserved" as const,
+    observations: [{ targetUrl, responseUrl: targetUrl, actualOrigin: binding.endpoint_origin, actualPath: binding.endpoint_path, actualModel: binding.model_id, requestId, requestIdSource: "body" as const, bodyResponseId: requestId, headerRequestId: null, headerRequestIdName: null, status: 200, redirected: false, routeTupleVerified: true, failureReason: null }],
+    peerVerification: "not_observable" as const, proxyVerification: "not_observable" as const,
+  };
 }
 
 class WritingModel extends MockModel {
@@ -78,6 +100,39 @@ class BadPreimageModel extends MockModel {
   override async invoke(request: ProviderRequest): Promise<ProviderResponse> {
     const response = await super.invoke(request);
     if (request.stage === "EXECUTE") response.structuredPatches = [{ path: "src/parser.ts", preimageHash: "0".repeat(64), replacement: "bad\n" }];
+    return response;
+  }
+}
+
+class PreflightRejectModel extends MockModel {
+  executeCalls = 0;
+  override preflight(request: ProviderRequest): void { if (request.stage === "EXECUTE") throw new Error("synthetic immutable route mismatch"); }
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> { if (request.stage === "EXECUTE") this.executeCalls++; return super.invoke(request); }
+}
+
+class MissingRequestIdModel extends MockModel {
+  executeCalls = 0;
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> {
+    const response = await super.invoke(request);
+    if (request.stage === "EXECUTE") {
+      this.executeCalls++; response.requestId = null;
+      if (response.routeEvidence) {
+        response.routeEvidence.requestId = null; response.routeEvidence.requestIds = []; response.routeEvidence.evidenceComplete = false;
+        response.routeEvidence.unverifiedReasons = ["provider_request_id_unavailable"];
+        response.routeEvidence.bodyResponseIds = [null]; response.routeEvidence.routeTupleVerified = false; response.routeEvidence.verificationStatus = "incomplete";
+        response.routeEvidence.observations[0] = { ...response.routeEvidence.observations[0], requestId: null, bodyResponseId: null, routeTupleVerified: false, failureReason: "provider_request_id_unavailable" };
+      }
+    }
+    return response;
+  }
+}
+
+class FalseRouteEvidenceModel extends MockModel {
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> {
+    const response = await super.invoke(request);
+    if (request.stage === "EXECUTE" && response.routeEvidence) {
+      response.routeEvidence.observations[0] = { ...response.routeEvidence.observations[0], responseUrl: "https://example.invalid/chat/completions", status: 302 };
+    }
     return response;
   }
 }
@@ -248,6 +303,86 @@ describe("approval workflow", () => {
     expect((await router.approve(planned.taskId, subject.main)).state).toBe("BLOCKED");
   });
 
+  it("records route preflight mismatch as FAILED_BEFORE_SEND without invoking the executor", async () => {
+    const subject = await workflowFixture(); const model = new PreflightRejectModel(); const original = await readFile(path.join(subject.main, "src", "parser.ts"));
+    const router = new RouterOrchestrator(model, new MockLocal(), subject.store, undefined, subject.worktrees); const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main });
+    const blocked = await router.approve(planned.taskId, subject.main); expect(blocked.state).toBe("BLOCKED"); expect(model.executeCalls).toBe(0);
+    const attempt = (await new AttemptPersistence(subject.store.root).listAttempts(planned.taskId)).find(item => item.stage === "EXECUTE");
+    expect(attempt).toMatchObject({ status: "FAILED_BEFORE_SEND", failure_class: "local_preflight", send_started_at: null, provider_request_id: null });
+    expect(await readFile(path.join(subject.main, "src", "parser.ts"))).toEqual(original);
+  });
+
+  it.each([
+    ["provider", { provider_id: "openai-codex" }],
+    ["adapter", { adapter_id: "other-adapter" }],
+    ["model", { model_id: "deepseek-v4-pro" }],
+    ["endpoint", { endpoint_origin: "https://example.invalid" }],
+    ["path", { endpoint_path: "/v1/chat/completions" }],
+    ["protocol", { wire_protocol: "responses" }],
+    ["auth", { auth_alias: "openai-cross-provider" }],
+    ["reasoning", { reasoning_effort: "high" }],
+    ["budget", { request_budget: { max_input_tokens: 64_000, max_output_tokens: 1, max_tool_calls: 10, max_wall_time_ms: 300_000, max_estimated_cost_usd: null, billing_mode: "unknown" } }],
+    ["read scope", { read_scope: ["src/other.ts"] }],
+    ["write scope", { write_scope: ["src/other.ts"] }],
+  ])("persists a hash-valid %s tuple mismatch as FAILED_BEFORE_SEND with zero credential/fetch", async (_name, patch) => {
+    const subject = await workflowFixture(); const resolver = vi.fn(() => "synthetic"); const fetchImpl = vi.fn(); const planning = new MockModel();
+    const routing = new RoutingProviderAdapter(new Map<string, ProviderAdapter>([
+      ["openai-codex", planning], ["deepseek", new DeepSeekChatAdapter({ credentialResolver: resolver, fetchImpl: fetchImpl as typeof fetch })],
+    ]));
+    const router = new RouterOrchestrator(routing, new MockLocal(), subject.store, undefined, subject.worktrees); const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main });
+    const changed = { ...planned, plan: { ...planned.plan!, routeBinding: rebuildBinding(planned.plan!.routeBinding, patch as Partial<RouteBinding>) } };
+    await subject.store.save(changed, true);
+    expect((await router.approve(planned.taskId, subject.main)).state).toBe("BLOCKED");
+    const attempt = (await new AttemptPersistence(subject.store.root).listAttempts(planned.taskId)).find(item => item.stage === "EXECUTE");
+    expect(attempt).toMatchObject({ status: "FAILED_BEFORE_SEND", failure_class: "local_preflight", send_started_at: null, provider_request_id: null });
+    expect(resolver).not.toHaveBeenCalled(); expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("resolves an approved credential alias in prepare and fails before send when unavailable", async () => {
+    const subject = await workflowFixture(); const resolver = vi.fn(() => undefined); const fetchImpl = vi.fn();
+    const routing = new RoutingProviderAdapter(new Map<string, ProviderAdapter>([
+      ["openai-codex", new MockModel()], ["deepseek", new DeepSeekChatAdapter({ credentialResolver: resolver, fetchImpl: fetchImpl as typeof fetch })],
+    ]));
+    const router = new RouterOrchestrator(routing, new MockLocal(), subject.store, undefined, subject.worktrees); const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main });
+    expect((await router.approve(planned.taskId, subject.main)).state).toBe("BLOCKED");
+    const attempt = (await new AttemptPersistence(subject.store.root).listAttempts(planned.taskId)).find(item => item.stage === "EXECUTE");
+    expect(attempt).toMatchObject({ status: "FAILED_BEFORE_SEND", failure_class: "local_preflight", send_started_at: null });
+    expect(resolver).toHaveBeenCalledOnce(); expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("resolves one valid synthetic credential once across prepare and defensive invoke preflights", async () => {
+    const subject = await workflowFixture(); const resolver = vi.fn(() => "synthetic-key"); let calls = 0;
+    const preimageHash = createHash("sha256").update("export const parser = 1;\n").digest("hex");
+    const deepseek = new DeepSeekChatAdapter({ credentialResolver: resolver, fetchImpl: async () => {
+      calls++;
+      const message = calls === 1
+        ? { content: "", tool_calls: [{ id: "p", type: "function", function: { name: "propose_patch", arguments: JSON.stringify({ path: "src/parser.ts", preimageHash, replacement: "export const parser = 2;\n" }) } }] }
+        : { content: "done" };
+      return deepResponse({ id: `deep-${calls}`, model: "deepseek-v4-flash", choices: [{ message }], usage: {} });
+    } });
+    const routing = new RoutingProviderAdapter(new Map<string, ProviderAdapter>([["openai-codex", new MockModel()], ["deepseek", deepseek]]));
+    const router = new RouterOrchestrator(routing, new MockLocal(), subject.store, undefined, subject.worktrees); const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main });
+    expect((await router.approve(planned.taskId, subject.main)).state).toBe("COMPLETED"); expect(resolver).toHaveBeenCalledOnce(); expect(calls).toBe(2);
+  });
+
+  it("keeps a missing provider request ID null and blocks replay after response_invalid", async () => {
+    const subject = await workflowFixture(); const model = new MissingRequestIdModel(); const original = await readFile(path.join(subject.main, "src", "parser.ts"));
+    const router = new RouterOrchestrator(model, new MockLocal(), subject.store, undefined, subject.worktrees); const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main });
+    expect((await router.approve(planned.taskId, subject.main)).state).toBe("BLOCKED");
+    const attempt = (await new AttemptPersistence(subject.store.root).listAttempts(planned.taskId)).find(item => item.stage === "EXECUTE");
+    expect(attempt).toMatchObject({ status: "AMBIGUOUS", failure_class: "response_invalid", provider_request_id: null });
+    expect(model.executeCalls).toBe(1); expect((await router.approve(planned.taskId, subject.main)).state).toBe("BLOCKED"); expect(model.executeCalls).toBe(1);
+    expect(await readFile(path.join(subject.main, "src", "parser.ts"))).toEqual(original);
+  });
+
+  it("does not trust a provider adapter's self-reported route identity", async () => {
+    const subject = await workflowFixture(); const original = await readFile(path.join(subject.main, "src", "parser.ts"));
+    const router = new RouterOrchestrator(new FalseRouteEvidenceModel(), new MockLocal(), subject.store, undefined, subject.worktrees); const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main });
+    expect((await router.approve(planned.taskId, subject.main)).state).toBe("BLOCKED");
+    const attempt = (await new AttemptPersistence(subject.store.root).listAttempts(planned.taskId)).find(item => item.stage === "EXECUTE");
+    expect(attempt).toMatchObject({ status: "AMBIGUOUS", failure_class: "response_invalid" }); expect(await readFile(path.join(subject.main, "src", "parser.ts"))).toEqual(original);
+  });
+
   it("blocks a private text plan before any DeepSeek TEXT_EXPAND send", async () => {
     const subject = await workflowFixture(); const model = new PrivateTextModel(); const router = new RouterOrchestrator(model, new MockLocal(), subject.store, undefined, subject.worktrees);
     const planned = await router.auto("Expand a synthetic document", { projectDirectory: subject.main, profile: { kind: "text", sensitivity: "normal" } });
@@ -280,4 +415,16 @@ async function workflowFixture(): Promise<{ root: string; main: string; store: S
 async function git(directory: string, args: readonly string[]): Promise<string> {
   const child = spawn("git", [...args], { cwd: directory, windowsHide: true, shell: false, stdio: ["ignore", "pipe", "pipe"] }); let stdout = "";
   child.stdout.setEncoding("utf8"); child.stdout.on("data", chunk => { stdout += chunk; }); const [code] = await once(child, "close") as [number | null]; if (code !== 0) throw new Error(`Synthetic git command failed: ${args[0]}`); return stdout;
+}
+
+function rebuildBinding(binding: RouteBinding, patch: Partial<RouteBinding>): RouteBinding {
+  const { route_binding_hash: _hash, ...body } = binding;
+  return createRouteBinding({ ...body, ...patch });
+}
+
+function deepResponse(payload: unknown): Response {
+  const response = new Response(JSON.stringify(payload), { status: 200 });
+  Object.defineProperty(response, "url", { value: `${DEEPSEEK_ENDPOINT_ORIGIN}${DEEPSEEK_ENDPOINT_PATH}` });
+  Object.defineProperty(response, "redirected", { value: false });
+  return response;
 }

@@ -1,6 +1,6 @@
 # 16｜Orchestrator-first 最终实施计划与阶段门
 
-> 状态：已接受的实施基线；S0–S4 已完成离线阶段门，S5–S9 尚未实施，规定的真实验证尚未运行。
+> 状态：已接受的实施基线；S0–S5 已完成离线阶段门，S6–S9 尚未实施，规定的真实验证尚未运行。
 >
 > 更新时间：2026-08-21。
 >
@@ -47,16 +47,16 @@ Codex GPT Final Review
 | 能力 | 当前状态 | 说明 |
 | --- | --- | --- |
 | 确定性路由策略 | Implemented / offline tested | 已有分类、阶段路由和预算测试，但策略将因隐私默认拒绝而调整 |
-| 审批哈希 | Implemented / offline tested | S1 新合同完整绑定 task/route/context/policy；legacy 路径已增加 isolation hash，S5 endpoint 强证明和 S7 新 core 接入仍待完成 |
-| DeepSeek Direct Adapter | Capability restricted / offline attack-tested | S4 manifest read、独立 write scope 与 structured patch 已接入；S5 endpoint/auth/model/protocol identity 仍待完成 |
-| Codex CLI planning/review | Implemented / architecture mismatch | 后台另起 Codex，不等于当前 GPT 主会话承担 Supervisor |
+| 审批哈希 | Implemented / offline tested | S1 新合同完整绑定 task/route/context/policy；legacy 路径已绑定 isolation hash 与 immutable RouteBinding，S7 新 core 接入仍待完成 |
+| DeepSeek Direct Adapter | Route tuple + capability restricted / offline attack-tested | S4 manifest/patch capability 与 S5 exact endpoint/auth/model/protocol/逐轮 mock evidence 已接入；不证明 network peer |
+| Codex CLI planning/review | Legacy unbound only / architecture mismatch | 后台另起 Codex，不等于当前 GPT Supervisor；bound transport 因 endpoint/auth/header 不可观测而 spawn 前失败 |
 | 主 working tree scope guard | Implemented / preventive + post-hoc | S4 Direct Adapter 预防性 capability 与 worktree 后置检查已接入；S6 完整 gate 仍待完成 |
 | 低写入状态持久化 | Implemented / offline tested | S2 已完成副作用前 checkpoint、幂等锁、原子写和 conservative recovery |
 | 原生 DeepSeek 菜单/profile | Implemented experiment / deprecated as default | 与 Orchestrator-first 正常体验冲突 |
 | Isolated worktree | Implemented / offline tested | run-scoped detached worktree、dirty evidence、ownership-safe lifecycle 和冲突检测已通过 synthetic repo 测试；不是 OS sandbox |
 | Direct Adapter capability boundary | Implemented / offline attack-tested | S4 本地工具 surface 失败关闭；不等于 OS sandbox |
 | OS sandbox / low-privilege process | Design only | Job Object/AppContainer/低权限账户仍为 TODO-03 |
-| Immutable RouteBinding | Contract implemented / not invoked | S1 类型/schema/hash 已离线验证；S5 才接入 endpoint/auth/model/protocol preflight |
+| Immutable RouteBinding | Canonical + legacy bridge invoked / offline tested | canonical/legacy builder 深度冻结；legacy plan/approval/fingerprint 与 S2 prepare preflight 已接入，S7 full core 仍待迁移 |
 | Ambiguous paid-call handling | Implemented / offline tested | S2 timeout/reset/response lost → AMBIGUOUS/BLOCKED，禁止自动重发 |
 | EvidenceBundle | Design only | 尚未实现 |
 | GPT foreground MCP/skill | Design only | 尚未实现 |
@@ -574,6 +574,16 @@ S4 阶段门：PASS。结论仅限 Direct DeepSeek Adapter 的本地 capability 
 
 阶段门：所有 route mismatch 回归用例 100% 在联网前失败，且 RouteEvidence 不依赖单一自报字段。
 
+完成记录（2026-08-21）：canonical S1 builder 与 legacy bridge 共用深度 clone/freeze 的 RouteBinding 创建边界。legacy plan、approval、request fingerprint 和 provider request 绑定稳定 adapter ID、provider/model、reasoning、budget、exact origin/path、protocol、auth alias 和 scopes。hash-valid tuple mismatch 在 S2 `PREPARED` 的 local preflight 中持久化为 `FAILED_BEFORE_SEND`，`send_started_at`/provider request ID 保持 `null`，credential resolver/fetch 为零。
+
+Direct DeepSeek 只按批准 alias 选择一个 credential 来源，不在 env/DPAPI 间回退；同一冻结请求跨 prepare 与防御性 invoke preflight 只解析一次。fetch 固定 `redirect: manual`，301/302/303/307/308 的 relative/same/cross-origin Location 均不跟随。每个工具轮次先核对 exact target/response URL、2xx status 与 response model，再分别记录 body response ID 和 allowlisted header request ID；二者属于不同命名空间，可不同但不得缺失、含控制字符、逗号组合或出现多个候选 header。任一轮失败不暴露 staged proposal。
+
+RouteEvidence 使用 `routeTupleVerified` 与 `verificationStatus=route_tuple_verified_peer_unobserved`，明确区分可观测 tuple 和不可观测 DNS/socket peer、系统代理/TLS；长期 `verified` 不将其冒充端到端 provider identity。缺失/不完整 request ID 保持 `null`，由既有 S2 validation 归为 `response_invalid → AMBIGUOUS/BLOCKED`，重复 approve 不重发。Codex CLI 不用 generic event/item ID 或 approved model 补证据；bound transport 因实际 endpoint/auth/header 不可独立观测而 spawn 前失败关闭，unbound legacy planning/review 仍非完整 route identity。
+
+零费用证据：TypeScript `--noEmit`、S5 定向 7/7 files 160/160 tests、全量 Vitest 17/17 files 279/279 tests 通过。全部使用 synthetic repo/credential/env、mock provider/fetch；未读取真实 config/auth/DPAPI/env 值，未调用 API/live benchmark。详见 `docs/22-s5-route-preflight.md`。
+
+S5 阶段门：PASS。结论仅限 immutable binding、local preflight 和 injected mock transport 的 observable route-tuple 失败关闭；不构成真实 provider route、DNS peer/proxy/TLS、EvidenceBundle、OS sandbox 或 production readiness。S6 可开始。
+
 ### S6｜Local Quality Gate 与 EvidenceBundle
 
 目标：最终质量和范围由确定性证据支撑。
@@ -801,9 +811,10 @@ Baseline B: GPT plan → DeepSeek execute → local gate → GPT review
 
 ### TODO-08｜Route endpoint、proxy 与 DNS 证明强度
 
-- 当前默认：规范化 HTTPS origin、精确 path、禁止 redirect、显式代理策略。
+- 当前默认：S5 已固定规范化 HTTPS origin、精确 path、禁止 redirect，并在 injected mock fetch 中逐轮验证 target/response URL、status、model 与 ID；结果只标为 `route_tuple_verified_peer_unobserved`。
 - 待研究：系统代理、DNS rebinding、连接后实际 peer 证据在 Node/Windows 中的可观测性。
-- 评估：mock 测试、受控本地代理实验、供应商 request ID/header 可用性。
+- 已有证据：mock redirect/URL/header/body-ID 矩阵；body response ID 与 header request ID 分开保存，不假设相同命名空间。
+- 后续评估：受控本地代理实验、真实供应商 header 合同、DNS/socket peer 与 TLS 证据；这些需要单独授权且不属于 S0–S9 零费用调用。
 - 原则：无法证明的字段标为未验证，不能伪造“100% provider identity”。
 
 ### TODO-09｜DeepSeek Chat Completions vs Responses

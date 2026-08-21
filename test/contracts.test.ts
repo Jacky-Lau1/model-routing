@@ -108,6 +108,14 @@ describe("canonical contract hashing", () => {
     expect(canonicalSerialize({ b: 2, a: 1 })).toBe(canonicalSerialize({ a: 1, b: 2 }));
   });
 
+  it("deep-clones and freezes the canonical RouteBinding creation boundary", () => {
+    const input = routeInput({ request_budget: { ...budget } }); const binding = buildRouteBinding(input, createTaskPackage(taskInput()), policies().effective, NOW);
+    input.read_scope[0] = "src/b.ts"; input.request_budget.max_output_tokens = 9;
+    expect(binding.read_scope).toEqual(["src/a.ts"]); expect(binding.request_budget.max_output_tokens).toBe(1_000);
+    expect(Object.isFrozen(binding)).toBe(true); expect(Object.isFrozen(binding.request_budget)).toBe(true); expect(Object.isFrozen(binding.read_scope)).toBe(true);
+    expect(() => { binding.write_scope.push("src/b.ts"); }).toThrow();
+  });
+
   it("invalidates approval when route, scope, policy, or budget changes", () => {
     const base = approvedSubject();
     const approval = approveContracts(base, { approvalId: "synthetic-approval", approvedAt: NOW });

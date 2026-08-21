@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { DEEPSEEK_DPAPI_AUTH_ALIAS, DEEPSEEK_ENV_AUTH_ALIAS } from "./route-preflight.js";
 
 const CHILD_ENV_ALLOWLIST = new Set(["systemroot", "windir", "temp", "tmp"]);
 
@@ -19,9 +20,9 @@ export function buildCredentialSubprocessEnvironment(environment: NodeJS.Process
   return child;
 }
 
-export function loadDeepSeekApiKey(environment: NodeJS.ProcessEnv = process.env, dependencies: CredentialLoaderDependencies = {}): string | undefined {
-  const direct = normalizeCredential(environment.DEEPSEEK_API_KEY);
-  if (direct) return direct;
+export function loadDeepSeekApiKey(authAlias: string, environment: NodeJS.ProcessEnv = process.env, dependencies: CredentialLoaderDependencies = {}): string | undefined {
+  if (authAlias === DEEPSEEK_ENV_AUTH_ALIAS) return normalizeCredential(environment.DEEPSEEK_API_KEY);
+  if (authAlias !== DEEPSEEK_DPAPI_AUTH_ALIAS) throw new Error("DeepSeek credential alias is not supported");
   if ((dependencies.platform ?? process.platform) !== "win32" || !environment.LOCALAPPDATA) return undefined;
   const encrypted = path.win32.join(environment.LOCALAPPDATA, "CodexRouter", "deepseek-key.dpapi");
   if (!(dependencies.fileExists ?? existsSync)(encrypted)) return undefined;

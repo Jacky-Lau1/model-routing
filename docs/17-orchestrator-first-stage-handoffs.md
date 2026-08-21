@@ -2,7 +2,7 @@
 
 > 用途：用户计划为每个实施阶段开启一个新的 Codex 主会话。本文提供共同上下文、阶段依赖、每阶段可直接复制的启动 Prompt 和结束交接要求。
 >
-> 状态：S0、S1、S2、S3、S4 已于 2026-08-21 通过；S5 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
+> 状态：S0、S1、S2、S3、S4、S5 已于 2026-08-21 通过；S6 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
 
 ## 一、所有新会话先读
 
@@ -15,11 +15,12 @@
 5. 已完成 S2 后读取 `docs/19-s2-attempt-persistence.md`
 6. 已完成 S3 后读取 `docs/20-s3-isolated-worktree.md`
 7. 已完成 S4 后读取 `docs/21-s4-safe-executor.md`
-8. `docs/08-decisions.md`
-9. `CHANGELOG.md`
-10. `logs/decision-log.md`
-11. `logs/routing-validation-log.md`
-12. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
+8. 已完成 S5 后读取 `docs/22-s5-route-preflight.md`
+9. `docs/08-decisions.md`
+10. `CHANGELOG.md`
+11. `logs/decision-log.md`
+12. `logs/routing-validation-log.md`
+13. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
 
 共同目标体验：
 
@@ -96,8 +97,8 @@ S10 有限真实 Pilot
 | S2 | 已通过 | 2026-08-21：双层状态、原子 checkpoint、幂等锁、crash recovery；67/67 离线测试 | 保持 AMBIGUOUS 禁止自动重发 |
 | S3 | 已通过 | 2026-08-21：run-scoped detached worktree、dirty evidence、归属/恢复/冲突检测；116/116 离线测试 | 保持变更隔离，不误称 OS sandbox |
 | S4 | 已通过 | 2026-08-21：manifest-only read、single structured patch、physical path/env boundary；169/169 离线测试 | 保持 capability/OS sandbox 边界 |
-| S5 | 可开始 | endpoint mismatch 尚无 preflight | 只用 mock 实施 route preflight/evidence |
-| S6 | 未开始 | 当前只有局部 scope/validation evidence | S5 通过后开始 |
+| S5 | 已通过 | 2026-08-21：immutable binding、durable preflight、逐轮 observable route-tuple evidence；279/279 离线测试 | 保持 peer/proxy 未观测边界，不伪称真实路由 |
+| S6 | 可开始 | 当前只有局部 scope/validation evidence | 只实施 quality gate、secret scan、diff freeze 与 EvidenceBundle |
 | S7 | 未开始 | 当前 foreground interface 未实现 | S6 通过后开始 |
 | S8 | 未开始 | 当前 review/apply 语义未分离 | S7 通过后开始 |
 | S9 | 未开始 | Orchestrator-first E2E 未认证 | S8 通过后开始 |
@@ -197,7 +198,7 @@ S3 完成证据：`GitWorktreeManager` 从批准的完整 commit 创建 detached
 
 S4 完成证据：legacy plan 分别审批 `readFiles`、`writeFiles`、`dataClassification`，所有 DeepSeek stage 在 S7 完整 policy 接线前仅允许 public。Direct DeepSeek code adapter 只暴露 `list_manifest`、`read_file`、`propose_patch`，删除 broad list/generic writer；capability/root 预检先于 credential/fetch，credential child 不继承 PATH 并使用绝对 PowerShell 路径。read 经过 manifest/physical path/junction/reparse/classification/size/encoding/secret/hash 检查，单文件 proposal 在 S2 async response validation 中按 write scope/preimage 原子应用，失败为 `AMBIGUOUS/BLOCKED` 且不重发。TypeScript 与 Vitest 15/15 files、169/169 tests 在 synthetic repo、mock fetch/provider 下通过。TODO-01 固定 structured patch；CRLF/binary/large/rename/delete/multi-file 均拒绝。未验证真实 endpoint/auth/model/protocol、任意 Windows reparse tag、OS sandbox 或真实 API，详见 `docs/21-s4-safe-executor.md`。
 
-## 十、S5 新对话 Prompt：RouteBinding 与 endpoint preflight
+## 十、S5 新对话 Prompt：RouteBinding 与 endpoint preflight（已完成，历史保留）
 
 ```markdown
 继续 Draft PR #1。本会话只实施 docs/16 的 S5：不可变 RouteBinding、endpoint/auth/model/protocol preflight 和多源 RouteEvidence。全部使用 mock fetch/provider。
@@ -208,6 +209,10 @@ RouteBinding 中使用规范化 HTTPS endpoint_origin 和 endpoint_path；auth �
 
 本阶段不运行真实 API，不读取真实 credential，不修改 Codex provider/config。
 ```
+
+S5 完成证据：canonical/legacy RouteBinding 深度 clone/freeze；legacy plan、approval、request fingerprint 与 stable adapter ID、provider/model、reasoning、budget、exact origin/path、protocol、auth alias 和 scopes 绑定。hash-valid tuple mismatch 在 durable `PREPARED` 内写 `FAILED_BEFORE_SEND`，resolver/fetch 为零。Direct mock transport 使用 manual redirect，每个工具轮次先验证 exact response URL/status/model，并分别记录 body response ID 与 allowlisted header request ID；缺失证据保持 `null` 并进入 `response_invalid → AMBIGUOUS/BLOCKED`，不重发。Codex CLI bound transport 不可观测时 spawn 前停止。
+
+TypeScript `--noEmit`、S5 定向 7/7 files 160/160 tests 和全量 17/17 files 279/279 tests 通过；全部为 synthetic repo/credential/env 和 mock provider/fetch。`route_tuple_verified_peer_unobserved` 只证明可观测 tuple，不证明 DNS peer、系统代理/TLS 或真实 provider identity。S5 未生成 EvidenceBundle，详见 `docs/22-s5-route-preflight.md`。
 
 ## 十一、S6 新对话 Prompt：Quality Gate 与 EvidenceBundle
 

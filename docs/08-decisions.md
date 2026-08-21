@@ -138,3 +138,14 @@
 - 副作用：`propose_patch` 只在 adapter 内存收集；Orchestrator 在隔离 worktree 的异步 response validation 中应用一个同目录 staged replacement/create，成功后才允许 attempt 写 `SUCCEEDED`。失败/崩溃进入 `AMBIGUOUS/BLOCKED`，不自动重发。
 - 环境：credential helper child 只获得显式最小 environment 和专用 secret path；PowerShell executable 由校验后的 `SystemRoot` 构造绝对路径，不通过 PATH 搜索。auth secret 只进入 transport header，不进入 plan、消息或持久状态。
 - 边界：TODO-01 固定 structured patch，不开放受限 writer；TODO-03 OS sandbox 仍开放。S4 不验证 endpoint/auth/model/protocol/redirect（S5），也不替代 S6 quality gate、secret scan 或 EvidenceBundle。
+
+## ADR-017：S5 使用 immutable RouteBinding 与可观测 route-tuple 证据
+
+- 日期：2026-08-21
+- 状态：接受
+- 绑定：canonical S1 builder 与 legacy bridge 共用深度 clone/freeze 的 RouteBinding 创建边界。legacy plan、approval、request fingerprint 和 provider request 均绑定完整 tuple；provider、稳定 adapter ID、model、reasoning、budget、origin/path、protocol、auth alias 和 scopes 必须精确交叉匹配。
+- preflight：hash-invalid 合同在审批入口拒绝；hash-valid 但配置不兼容的 tuple 在 S2 `PREPARED` 的 local preflight 中写 `FAILED_BEFORE_SEND`，credential resolver、fetch 与 spawn 均不得发生。DeepSeek credential 只按批准 alias 选择一个来源，不在 env/DPAPI 间自动回退。
+- transport：Direct DeepSeek fetch 固定 `redirect: manual`，任何 3xx、redirected flag、错误/缺失 response URL、非 2xx、错误 model 或无效 JSON 均在工具执行前返回不完整 evidence。每个工具轮次保留 approved target、actual response URL、status、model、body response ID 与 allowlisted header request ID；body/header ID 属于不同命名空间，不猜测必须相等。
+- 状态语义：`routeTupleVerified` 只表示本地可观测 tuple 完整匹配；`verificationStatus=route_tuple_verified_peer_unobserved`、peer/proxy `not_observable` 明确说明 DNS/socket peer、系统代理和 TLS 未验证。因此旧的长期 `verified` 不会把 Direct mock evidence 宣称为端到端 provider identity。
+- 缺证据：缺失或歧义 request ID 保持 `null`，经既有 S2 response validation 进入 `response_invalid → AMBIGUOUS/BLOCKED`，禁止自动重发。Codex CLI 不使用 generic event/item ID 或批准 model 补值；有 bound RouteBinding 时，因实际 endpoint/auth/header 不可独立观测而在 spawn 前失败关闭。
+- 边界：S5 全部证据来自 injected mock fetch、synthetic credential 和 synthetic repo；不修改 S1 schema/S2 attempt schema，不生成 S6 EvidenceBundle，不证明真实 API、DNS peer、proxy/TLS 或 production readiness。

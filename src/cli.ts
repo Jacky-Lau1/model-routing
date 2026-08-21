@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import path from "node:path";
 import { runRoutingBenchmark } from "./benchmark.js";
+import { loadDeepSeekApiKey } from "./credentials.js";
 import { RouterOrchestrator } from "./orchestrator.js";
 import { StateStore } from "./persistence.js";
 import { CodexCliAdapter } from "./providers/codex-cli.js";
@@ -17,7 +18,7 @@ program.name("route").description("Orchestrator-first, fail-closed model router"
 function services(stateRoot?: string) {
   const store = new StateStore(stateRoot ? path.resolve(stateRoot) : undefined);
   const openai = new CodexCliAdapter({ executable: process.env.CODEX_CLI_PATH });
-  const deepseek = new DeepSeekChatAdapter({ baseUrl: process.env.DEEPSEEK_BASE_URL });
+  const deepseek = new DeepSeekChatAdapter({ credentialResolver: authAlias => loadDeepSeekApiKey(authAlias) });
   const providers = new RoutingProviderAdapter(new Map<string, ProviderAdapter>([["openai-codex", openai], ["deepseek", deepseek]]));
   return { store, router: new RouterOrchestrator(providers, new LocalValidationAdapter(), store) };
 }

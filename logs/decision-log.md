@@ -84,3 +84,16 @@
 - 验证：TypeScript `--noEmit` 与 Vitest 15/15 files、169/169 tests 通过；全部为临时 synthetic repo/file、mock fetch/provider 和 synthetic credential/env。未读取真实配置/auth/DPAPI/env 值，未调用 API/benchmark。
 - 边界：S4 只证明本地 capability surface 离线失败关闭，不是 OS sandbox。endpoint/auth/model/protocol/redirect/RouteEvidence 属于 S5；quality/EvidenceBundle 属于 S6。
 - 当前状态：S4 阶段门通过；S5 可开始。
+
+## 2026-08-21｜S5 immutable RouteBinding、durable preflight 与可观测 tuple 证据
+
+- 决策：canonical S1 builder 和 legacy bridge 共用深度 clone/freeze 的 RouteBinding 创建边界。legacy plan、approval、request fingerprint 与 provider request 绑定 stable adapter ID、provider/model、reasoning、budget、exact origin/path、protocol、auth alias 和 scopes。
+- preflight：contract/hash 无效在审批入口拒绝；hash-valid 配置 mismatch 在 S2 `PREPARED` 的 central + adapter preflight 中写 `FAILED_BEFORE_SEND/local_preflight`，`send_started_at`、provider request ID、credential resolver 和 fetch 均保持空/零。
+- auth：DeepSeek 只按批准 alias 选择 env 或 DPAPI 单一来源，不自动换源；CLI 删除 invoke-time `DEEPSEEK_BASE_URL`。同一冻结 request 的 prepare/invoke 防御性预检只解析一次 credential，secret 只存内存并只进入 transport header。
+- transport：Direct injected fetch 固定 manual redirect；3xx/redirected、错误或缺失 response URL、非 2xx、model/JSON/ID evidence 错误均在工具前失败。body response ID 与 allowlisted header request ID 分开记录，允许不同，不假设同一命名空间。
+- evidence：逐轮核对 approved target、actual response URL/status/model、primary/body/header IDs。`routeTupleVerified` 只证明可观测字段；status 明确为 `route_tuple_verified_peer_unobserved`，peer/proxy 保持 `not_observable`，长期 `verified=false`，不宣称真实 provider identity。
+- 失败：缺失/歧义 ID 保持 `null`，收到 response 后由 S2 归为 `response_invalid → AMBIGUOUS/BLOCKED`，重复 approve 不重发。Codex CLI 不把 generic event/item ID 或 approved model 伪造成证据；bound transport 不可观测时 spawn 前停止。
+- 范围：28 files（10 production、7 tests、11 governance）；未修改 S1/S2 schema、attempt persistence 或 S6+ 架构。扩围仅为 canonical immutability、stable adapter ID 与 Codex evidence tests。
+- 验证：TypeScript `--noEmit`；S5 定向 7/7 files、160/160 tests；全量 17/17 files、279/279 tests。全部为 synthetic repo/credential/env、mock provider/fetch；未读真实 config/auth/DPAPI/env 值，未联网、未运行 API/benchmark。
+- 边界：DNS/socket peer、系统代理/TLS、真实供应商 header 合同、OS sandbox、S6 EvidenceBundle 均未验证/未实现。
+- 当前状态：S5 离线阶段门通过；S6 可开始。

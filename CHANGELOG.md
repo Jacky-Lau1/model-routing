@@ -6,6 +6,9 @@
 
 ### Added
 
+- S5 canonical/legacy RouteBinding 深度 clone/freeze 与 exact cross-field preflight，固定 provider、adapter ID、model family、origin/path、protocol、auth alias、reasoning、budget 和 capability scopes。
+- Direct DeepSeek 逐轮 transport observation：分别记录 body response ID 与 allowlisted header request ID，核对 exact response URL/model/status，manual redirect 一律拒绝；observable route tuple 与不可观测 DNS peer/proxy 明确分层。
+- S5 synthetic/mock 攻击矩阵与专项交接文档 `docs/22-s5-route-preflight.md`，覆盖 tuple、endpoint/path、redirect、request-ID、多轮工具、approval、registry 和 Codex CLI 证据负例。
 - S4 `SafeExecutor` capability boundary：exact public read manifest、独立 write scope、physical path/reparse、大小/UTF-8/secret-content、内容 hash 与 preimage 校验。
 - Direct DeepSeek 工具面收敛为 `list_manifest`、`read_file`、内存 `propose_patch`；Orchestrator 只在 isolated worktree 的 S2 response validation 内应用一个原子 replacement/create。
 - credential helper 使用合成可注入依赖、最小 child environment 和由验证后 `SystemRoot` 派生的绝对 PowerShell 路径；auth 只进入 transport header，不进入模型 body。
@@ -40,6 +43,9 @@
 
 ### Changed
 
+- legacy plan、approval 与 request fingerprint 现在绑定 immutable RouteBinding；hash-valid route mismatch 在 S2 `PREPARED` 的 local preflight 中持久化为 `FAILED_BEFORE_SEND`，credential resolver/fetch 均为零。
+- DeepSeek endpoint 不再接受 invoke-time base URL；credential 只按 approved alias 解析且不在 env/DPAPI 间自动回退。同一冻结请求的有效 credential 在 prepare/invoke 防御性预检链中只解析一次。
+- Provider registry 要求稳定 adapter ID。Direct response 缺失/冲突证据保持 request ID 为 `null` 并进入 `response_invalid → AMBIGUOUS/BLOCKED`；Codex CLI 不再把通用 event/item ID 或批准 model 伪造成实际证据，bound transport 不可观测时 spawn 前停止。
 - legacy plan 现在分别审批 `readFiles`、`writeFiles` 和 `dataClassification`；`allowedFiles` 仅由 `writeFiles` 派生用于兼容/post-hoc 检查，三者变化都会使审批失效。
 - broad `list_files` 和 generic `write_file` 已从 Direct DeepSeek Adapter 删除；代码 capability 只在 `EXECUTE/REPAIR` 开启，非 public 或非代码注入 filesystem grant 均在 credential/fetch 前失败。
 - S4 MVP 明确拒绝 rename、delete、多文件 batch、binary、CRLF、问号 glob 和超限文件，不以扩大 writer 权限绕过 TODO-01。

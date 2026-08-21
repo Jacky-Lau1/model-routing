@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { CODEX_ADAPTER_ID, preflightRouteBinding } from "../route-preflight.js";
 import type { ProviderAdapter, ProviderRequest, ProviderResponse, UsageMetrics } from "../types.js";
 
 export interface CodexCliOptions {
@@ -11,7 +12,14 @@ export interface CodexCliOptions {
 
 export class CodexCliAdapter implements ProviderAdapter {
   readonly provider = "openai-codex" as const;
+  readonly adapterId = CODEX_ADAPTER_ID;
   constructor(private readonly options: CodexCliOptions = {}) {}
+
+  preflight(request: ProviderRequest): void {
+    if (!request.routeBinding) return;
+    preflightRouteBinding(request.routeBinding, request.route, CODEX_ADAPTER_ID);
+    throw new Error("Codex CLI transport URL, response headers, and auth source are not independently observable for an immutable execution binding");
+  }
 
   async supportsEphemeral(): Promise<boolean> {
     const result = await run(this.options.executable ?? "codex", ["exec", "--help"], "", this.options.environment, 15_000);
@@ -20,6 +28,7 @@ export class CodexCliAdapter implements ProviderAdapter {
 
   async invoke(request: ProviderRequest): Promise<ProviderResponse> {
     if (request.route.provider !== "openai-codex") throw new Error(`Codex CLI cannot serve ${request.route.provider}`);
+    this.preflight(request);
     if (!await this.supportsEphemeral()) throw new Error("Installed Codex CLI does not support --ephemeral; refusing persistent fallback");
 
     const args = ["exec", "--ephemeral", "--json", "--ignore-user-config", "--model", request.route.model,
@@ -36,7 +45,7 @@ export class CodexCliAdapter implements ProviderAdapter {
     const prompt = [request.stablePrefix, `PROJECT_SUMMARY\n${request.projectSummary}`, `TASK_INPUT\n${request.dynamicInput}`].join("\n\n");
     const result = await run(this.options.executable ?? "codex", args, prompt, env, request.route.timeoutMs, { maxOutputTokens: request.route.maxOutputTokens, maxToolTurns: request.route.maxToolTurns });
     if (result.code !== 0) throw new Error(`Codex CLI failed (${result.code}): ${redact(result.stderr)}`);
-    return parseJsonLines(result.stdout, request);
+    return parseCodexJsonLines(result.stdout, request);
   }
 }
 
@@ -71,13 +80,14 @@ async function run(executable: string, args: string[], input: string, env: NodeJ
   return { code: code ?? 1, stdout, stderr };
 }
 
-function parseJsonLines(output: string, request: ProviderRequest): ProviderResponse {
-  let text = ""; let requestId = ""; let actualModel = request.route.model;
+export function parseCodexJsonLines(output: string, request: ProviderRequest): ProviderResponse {
+  let text = ""; let requestId: string | null = null; let actualModel: string | null = null;
   const usage: UsageMetrics = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 };
   for (const line of output.split(/\r?\n/).filter(Boolean)) {
     let event: any; try { event = JSON.parse(line); } catch { continue; }
-    requestId ||= event.response_id ?? event.request_id ?? event.id ?? "";
-    actualModel = event.model ?? actualModel;
+    const observedId = event.response_id ?? event.request_id;
+    if (!requestId) requestId = cleanObservedIdentifier(observedId);
+    actualModel = cleanObservedIdentifier(event.model) ?? actualModel;
     if (event.type === "item.completed" && event.item?.type === "agent_message") text = event.item.text ?? text;
     if (event.type === "response.completed" || event.type === "turn.completed") {
       const source = event.response?.usage ?? event.usage ?? {};
@@ -91,7 +101,12 @@ function parseJsonLines(output: string, request: ProviderRequest): ProviderRespo
     }
   }
   if (!text) throw new Error("Provider returned no final agent message");
-  return { text, requestId: requestId || "unreported", provider: request.route.provider, model: actualModel, usage };
+  return { text, requestId, provider: request.route.provider, model: actualModel ?? "", usage };
 }
 
 function redact(value: string): string { return value.replace(/(?:sk-|Bearer\s+)[A-Za-z0-9._-]+/gi, "[REDACTED]").slice(-4_000); }
+function cleanObservedIdentifier(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed && trimmed.length <= 256 && !/[\u0000-\u001f\u007f]/.test(trimmed) ? trimmed : null;
+}

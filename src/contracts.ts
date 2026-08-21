@@ -73,9 +73,18 @@ export function assertTaskPackage(value: unknown): asserts value is TaskPackage 
 }
 
 export function createRouteBinding(input: RouteBindingInput): RouteBinding {
-  const result = { ...input, route_binding_hash: stableHash(input) };
+  const cloned: RouteBindingInput = {
+    ...input,
+    request_budget: Object.freeze({ ...input.request_budget }),
+    read_scope: Object.freeze([...input.read_scope]) as unknown as string[],
+    write_scope: Object.freeze([...input.write_scope]) as unknown as string[],
+    network_scope: Object.freeze([...input.network_scope]) as unknown as string[],
+    environment_scope: Object.freeze([...input.environment_scope]) as unknown as string[],
+    command_scope: Object.freeze([...input.command_scope]) as unknown as string[],
+  };
+  const result = { ...cloned, route_binding_hash: stableHash(cloned) };
   assertRouteBinding(result);
-  return result;
+  return Object.freeze(result);
 }
 
 export function hashRouteBinding(value: RouteBinding): string {
