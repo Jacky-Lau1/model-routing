@@ -75,7 +75,7 @@ url: https://api.openai.com/v1/responses
    - `src/providers/codex-cli.ts`
    - `src/providers/deepseek-chat.ts`
    - `src/policy.ts`
-   - `scripts/switch-codex-native-mode.ps1`
+   - `scripts/deprecated-experimental/native-codex/switch-codex-native-mode.ps1`（S0 后仅作历史实验材料）
    - `scripts/router-terminal.ps1`
 
 同时重新核对当前 OpenAI 官方文档，不要依赖旧版本记忆：

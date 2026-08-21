@@ -2,7 +2,7 @@
 
 > 用途：用户计划为每个实施阶段开启一个新的 Codex 主会话。本文提供共同上下文、阶段依赖、每阶段可直接复制的启动 Prompt 和结束交接要求。
 >
-> 状态：计划文档。任何阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
+> 状态：S0 已于 2026-08-21 通过；S1 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
 
 ## 一、所有新会话先读
 
@@ -15,7 +15,7 @@
 5. `CHANGELOG.md`
 6. `logs/decision-log.md`
 7. `logs/routing-validation-log.md`
-8. Draft PR #1 最新 diff 和当前阶段涉及的源码/测试
+8. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
 
 共同目标体验：
 
@@ -87,8 +87,8 @@ S10 有限真实 Pilot
 
 | 阶段 | 当前状态 | 最近证据/提交 | 下一动作 |
 | --- | --- | --- | --- |
-| S0 | 未开始 | 规划已写入 `docs/16` | 新会话实施旧入口退役 |
-| S1 | 未开始 | 仅有候选 schema | S0 通过后开始 |
+| S0 | 已通过 | 2026-08-21：默认入口 Orchestrator-only；28/28 离线测试通过 | 保持退役边界，不回补 native switching |
+| S1 | 可开始 | S0 日志与 ADR-012 | 实施合同、隐私与 schema |
 | S2 | 未开始 | 现有持久化不足 | S1 通过后开始 |
 | S3 | 未开始 | worktree 为 design only | S2 通过后开始 |
 | S4 | 未开始 | Direct Adapter 仅部分受限 | S3 通过后开始 |
@@ -99,7 +99,7 @@ S10 有限真实 Pilot
 | S9 | 未开始 | Orchestrator-first E2E 未认证 | S8 通过后开始 |
 | S10 | 禁止运行 | 等待 S0–S9 和明确费用授权 | 仅用户明确说“运行”后 |
 
-## 五、S0 新对话 Prompt：架构收口与旧入口退役
+## 五、S0 新对话 Prompt：架构收口与旧入口退役（已完成，历史保留）
 
 ```markdown
 继续维护 GitHub 仓库 Jacky-Lau1/model-routing 的 Draft PR #1。本会话只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S0：架构收口与旧入口退役。
@@ -115,8 +115,8 @@ S10 有限真实 Pilot
 
 S0 重点审查：
 
-- `scripts/switch-codex-native-mode.ps1`
-- `scripts/install-codex-deepseek-profiles.ps1`
+- `scripts/deprecated-experimental/native-codex/switch-codex-native-mode.ps1`
+- `scripts/deprecated-experimental/native-codex/install-codex-deepseek-profiles.ps1`
 - `scripts/install-router-terminal.ps1`
 - `scripts/router-terminal.ps1`
 - `scripts/set-deepseek-key.ps1`
@@ -125,6 +125,8 @@ S0 重点审查：
 - `docs/11-implementation.md`
 - `docs/13-continuation-handoff.md`
 - `prompts/continue-model-routing.md`
+
+S0 完成证据：默认安装器只生成 `Codex Router - Orchestrator`；mock backend 的实际生成与 dry-run 均通过；Router Terminal/CLI help 只把 Orchestrator 作为正常入口；`live-benchmark` 保持显式且未执行。阶段测试和扫描记录见 `logs/routing-validation-log.md`。
 
 ## 六、S1 新对话 Prompt：合同、隐私与 schema
 

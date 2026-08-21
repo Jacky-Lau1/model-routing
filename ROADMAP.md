@@ -4,8 +4,8 @@
 
 | 阶段 | 状态 | 目标 |
 | --- | --- | --- |
-| S0 | 未开始 | 退役默认 Desktop provider hot switch/native menu/Restore OpenAI 路径 |
-| S1 | 未开始 | 冻结 TaskPackage、RouteBinding、隐私、policy 和 EvidenceBundle schema |
+| S0 | 已通过（2026-08-21） | 默认入口只保留 Orchestrator；旧 native 脚本移入 deprecated experimental |
+| S1 | 可开始 | 冻结 TaskPackage、RouteBinding、隐私、policy 和 EvidenceBundle schema |
 | S2 | 未开始 | 分离 Workflow/Attempt，持久化副作用前检查点和 ambiguous 语义 |
 | S3 | 未开始 | 每个 run 使用 isolated Git worktree，保护主 workspace |
 | S4 | 未开始 | Direct DeepSeek safe executor 与 read/write/network/env/command scope |

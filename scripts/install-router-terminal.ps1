@@ -1,57 +1,76 @@
 [CmdletBinding()]
 param(
   [string]$RepositoryRoot,
-  [switch]$SkipDesktop
+  [switch]$SkipDesktop,
+  [string[]]$ShortcutDirectories,
+  [ValidateSet('Com', 'Mock')]
+  [string]$ShortcutBackend = 'Com',
+  [string]$IconPath,
+  [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = Split-Path -Parent $PSScriptRoot }
 $RepositoryRoot = [IO.Path]::GetFullPath($RepositoryRoot)
 $launcher = Join-Path $RepositoryRoot 'scripts\router-terminal.ps1'
-$nativeModeSwitcher = Join-Path $RepositoryRoot 'scripts\switch-codex-native-mode.ps1'
 if (-not (Test-Path -LiteralPath $launcher)) { throw "Launcher not found: $launcher" }
-if (-not (Test-Path -LiteralPath $nativeModeSwitcher)) { throw "Native mode switcher not found: $nativeModeSwitcher" }
 
-$shell = New-Object -ComObject WScript.Shell
-$shortcutDirectories = @([Environment]::GetFolderPath('Programs'))
-if (-not $SkipDesktop) { $shortcutDirectories += [Environment]::GetFolderPath('Desktop') }
-$icon = if ($env:CODEX_CLI_PATH -and (Test-Path -LiteralPath $env:CODEX_CLI_PATH)) { $env:CODEX_CLI_PATH } else { 'powershell.exe' }
+if ($null -eq $ShortcutDirectories -or $ShortcutDirectories.Count -eq 0) {
+  $ShortcutDirectories = @([Environment]::GetFolderPath('Programs'))
+  if (-not $SkipDesktop) { $ShortcutDirectories += [Environment]::GetFolderPath('Desktop') }
+}
+$ShortcutDirectories = @($ShortcutDirectories | ForEach-Object { [IO.Path]::GetFullPath($_) })
+
+if ([string]::IsNullOrWhiteSpace($IconPath)) {
+  $IconPath = if ($ShortcutBackend -eq 'Com' -and $env:CODEX_CLI_PATH -and (Test-Path -LiteralPath $env:CODEX_CLI_PATH)) {
+    $env:CODEX_CLI_PATH
+  } else {
+    'powershell.exe'
+  }
+}
 
 $entries = @(
-  @{ Name = 'Codex Router Agent Terminal'; Mode = 'Menu'; Description = 'Choose Auto, DeepSeek Flash, DeepSeek Pro, or OpenAI Codex' },
-  @{ Name = 'Codex Router - Auto'; Mode = 'Auto'; Description = 'Classify, plan, approve, and route automatically' },
-  @{ Name = 'Codex Router - DeepSeek Flash'; Mode = 'Flash'; Description = 'Open native Codex with DeepSeek V4 Flash Responses API' },
-  @{ Name = 'Codex Router - DeepSeek Pro'; Mode = 'Pro'; Description = 'Open native Codex with DeepSeek V4 Pro Responses API' },
-  @{ Name = 'Codex Router - OpenAI'; Mode = 'OpenAI'; Description = 'Open native Codex with the normal OpenAI configuration' }
+  @{
+    Name = 'Codex Router - Orchestrator'
+    Mode = 'Orchestrator'
+    Description = 'Open the deterministic Orchestrator planning and approval flow'
+  }
 )
 
-foreach ($directory in $shortcutDirectories) {
+$shell = if ($ShortcutBackend -eq 'Com' -and -not $DryRun) { New-Object -ComObject WScript.Shell } else { $null }
+
+foreach ($directory in $ShortcutDirectories) {
   foreach ($entry in $entries) {
     $shortcutPath = Join-Path $directory "$($entry.Name).lnk"
-    $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = 'powershell.exe'
-    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -Mode $($entry.Mode)"
-    $shortcut.WorkingDirectory = $RepositoryRoot
-    $shortcut.IconLocation = "$icon,0"
-    $shortcut.Description = $entry.Description
-    $shortcut.Save()
-    Write-Output $shortcutPath
-  }
-
-  $nativeEntries = @(
-    @{ Name = 'Codex Native Menu - DeepSeek Flash'; Mode = 'DeepSeekFlash'; Description = 'Switch the Codex Desktop native model menu to DeepSeek V4 Flash' },
-    @{ Name = 'Codex Native Menu - DeepSeek Pro'; Mode = 'DeepSeekPro'; Description = 'Switch the Codex Desktop native model menu to DeepSeek V4 Pro' },
-    @{ Name = 'Codex Native Menu - Restore OpenAI'; Mode = 'OpenAI'; Description = 'Restore the OpenAI config saved before native DeepSeek mode' }
-  )
-  foreach ($entry in $nativeEntries) {
-    $shortcutPath = Join-Path $directory "$($entry.Name).lnk"
-    $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = 'powershell.exe'
-    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$nativeModeSwitcher`" -Mode $($entry.Mode)"
-    $shortcut.WorkingDirectory = $RepositoryRoot
-    $shortcut.IconLocation = "$icon,0"
-    $shortcut.Description = $entry.Description
-    $shortcut.Save()
-    Write-Output $shortcutPath
+    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -Mode $($entry.Mode)"
+    if (-not $DryRun) {
+      New-Item -ItemType Directory -Path $directory -Force | Out-Null
+      if ($ShortcutBackend -eq 'Com') {
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = 'powershell.exe'
+        $shortcut.Arguments = $arguments
+        $shortcut.WorkingDirectory = $RepositoryRoot
+        $shortcut.IconLocation = "$IconPath,0"
+        $shortcut.Description = $entry.Description
+        $shortcut.Save()
+      } else {
+        $mockPath = "$shortcutPath.mock.json"
+        [ordered]@{
+          Name = $entry.Name
+          TargetPath = 'powershell.exe'
+          Arguments = $arguments
+          WorkingDirectory = $RepositoryRoot
+          IconLocation = "$IconPath,0"
+          Description = $entry.Description
+        } | ConvertTo-Json | Set-Content -LiteralPath $mockPath -Encoding utf8
+      }
+    }
+    [pscustomobject]@{
+      Name = $entry.Name
+      Mode = $entry.Mode
+      Path = $shortcutPath
+      Backend = $ShortcutBackend
+      DryRun = [bool]$DryRun
+    }
   }
 }
