@@ -214,9 +214,19 @@ export function assertAttemptRecord(value: unknown): asserts value is AttemptRec
 }
 
 export function createEvidenceBundle(input: EvidenceBundleInput): EvidenceBundle {
-  const result = { ...input, bundle_hash: stableHash(input) };
+  const body: EvidenceBundleInput = {
+    ...input,
+    attempt_ids: [...input.attempt_ids], route_evidence_ids: [...input.route_evidence_ids], attempt_summaries: input.attempt_summaries.map(item => Object.freeze({ ...item })), route_evidence_summaries: input.route_evidence_summaries.map(item => Object.freeze({ ...item })), files_changed: [...input.files_changed],
+    quality_gate_results: input.quality_gate_results.map(item => Object.freeze({ ...item })),
+    tests_run: input.tests_run.map(item => Object.freeze({ ...item })),
+    scope_violations: [...input.scope_violations], privacy_violations: [...input.privacy_violations],
+    secret_scan_summary: Object.freeze({ ...input.secret_scan_summary }), usage_metrics: Object.freeze({ ...input.usage_metrics }),
+    cost_metrics: Object.freeze({ ...input.cost_metrics }), remaining_risks: [...input.remaining_risks], redaction_notes: [...input.redaction_notes],
+  };
+  const result = { ...body, bundle_hash: stableHash(body) };
   assertEvidenceBundle(result);
-  return result;
+  for (const key of ["attempt_ids", "route_evidence_ids", "attempt_summaries", "route_evidence_summaries", "files_changed", "quality_gate_results", "tests_run", "scope_violations", "privacy_violations", "remaining_risks", "redaction_notes"] as const) Object.freeze(result[key]);
+  return Object.freeze(result);
 }
 
 export function hashEvidenceBundle(value: EvidenceBundle): string {
@@ -226,25 +236,29 @@ export function hashEvidenceBundle(value: EvidenceBundle): string {
 
 export function assertEvidenceBundle(value: unknown): asserts value is EvidenceBundle {
   const object = exactObject(value, "EvidenceBundle", [
-    "version", "bundle_id", "run_id", "task_id", "task_package_hash", "route_binding_hash", "policy_hash", "base_commit", "worktree_head",
-    "attempt_ids", "route_evidence_ids", "files_changed", "diff_hash", "diff_reference", "quality_gate_results", "tests_run",
-    "scope_violations", "privacy_violations", "secret_scan_summary", "usage_metrics", "cost_metrics", "wall_clock_time_ms", "repair_count",
+    "version", "bundle_id", "run_id", "task_id", "contract_provenance", "task_package_hash", "route_binding_hash", "policy_hash", "quality_policy_hash", "approval_hash", "execution_context_hash", "isolation_hash", "worktree_id", "base_commit", "worktree_head",
+    "attempt_ids", "route_evidence_ids", "attempt_summaries", "route_evidence_summaries", "files_changed", "diff_hash", "diff_reference", "quality_gate_results", "tests_run",
+    "content_snapshot_hash", "scope_violations", "privacy_violations", "secret_scan_summary", "usage_metrics", "cost_metrics", "wall_clock_time_ms", "repair_count",
     "remaining_risks", "redaction_notes", "bundle_hash",
   ]);
   literal(object.version, 1, "EvidenceBundle.version");
   identifier(object.bundle_id, "EvidenceBundle.bundle_id"); identifier(object.run_id, "EvidenceBundle.run_id"); identifier(object.task_id, "EvidenceBundle.task_id");
-  hash(object.task_package_hash, "EvidenceBundle.task_package_hash"); hash(object.route_binding_hash, "EvidenceBundle.route_binding_hash"); hash(object.policy_hash, "EvidenceBundle.policy_hash");
+  oneOf(object.contract_provenance, ["canonical", "legacy_bridge"], "EvidenceBundle.contract_provenance");
+  hash(object.task_package_hash, "EvidenceBundle.task_package_hash"); hash(object.route_binding_hash, "EvidenceBundle.route_binding_hash"); hash(object.policy_hash, "EvidenceBundle.policy_hash"); hash(object.quality_policy_hash, "EvidenceBundle.quality_policy_hash"); hash(object.approval_hash, "EvidenceBundle.approval_hash"); hash(object.execution_context_hash, "EvidenceBundle.execution_context_hash"); hash(object.isolation_hash, "EvidenceBundle.isolation_hash"); identifier(object.worktree_id, "EvidenceBundle.worktree_id");
   commit(object.base_commit, "EvidenceBundle.base_commit"); commit(object.worktree_head, "EvidenceBundle.worktree_head");
   stringArray(object.attempt_ids, "EvidenceBundle.attempt_ids", false, false); stringArray(object.route_evidence_ids, "EvidenceBundle.route_evidence_ids", false, false);
   (object.attempt_ids as unknown[]).forEach((entry, index) => identifier(entry, `EvidenceBundle.attempt_ids[${index}]`));
   (object.route_evidence_ids as unknown[]).forEach((entry, index) => identifier(entry, `EvidenceBundle.route_evidence_ids[${index}]`));
+  if (!Array.isArray(object.attempt_summaries) || !Array.isArray(object.route_evidence_summaries)) throw new Error("EvidenceBundle evidence summaries must be arrays");
+  object.attempt_summaries.forEach((entry, index) => { const item = exactObject(entry, `${index}.attempt_summary`, ["attempt_id", "stage", "status", "failure_class"]); identifier(item.attempt_id, `${index}.attempt_id`); oneOf(item.stage, ["CLASSIFY", "PLAN", "TEXT_FRAME", "TEXT_EXPAND", "EXECUTE", "VALIDATE", "REVIEW", "VISUAL_REVIEW", "REPAIR", "SOL_DIAGNOSIS"], `${index}.stage`); oneOf(item.status, ["PREPARED", "SENDING", "SUCCEEDED", "FAILED_BEFORE_SEND", "AMBIGUOUS", "CANCELLED"], `${index}.status`); oneOf(item.failure_class, ["none", "local_preflight", "provider_rejected", "transport_unknown", "response_invalid", "cancelled"], `${index}.failure_class`); });
+  object.route_evidence_summaries.forEach((entry, index) => { const item = exactObject(entry, `${index}.route_summary`, ["evidence_id", "provider", "model", "verification_status", "request_id_present"]); identifier(item.evidence_id, `${index}.evidence_id`); safeText(item.provider, `${index}.provider`); safeText(item.model, `${index}.model`); oneOf(item.verification_status, ["route_tuple_verified_peer_unobserved", "incomplete", "local"], `${index}.verification_status`); if (typeof item.request_id_present !== "boolean") throw new Error(`${index}.request_id_present must be boolean`); });
   if (!Array.isArray(object.files_changed)) throw new Error("EvidenceBundle.files_changed must be an array");
   object.files_changed.forEach((path, index) => assertSafeRelativePath(path, `EvidenceBundle.files_changed[${index}]`));
-  hash(object.diff_hash, "EvidenceBundle.diff_hash"); assertSafeRelativePath(object.diff_reference, "EvidenceBundle.diff_reference");
+  hash(object.content_snapshot_hash, "EvidenceBundle.content_snapshot_hash"); hash(object.diff_hash, "EvidenceBundle.diff_hash"); assertSafeRelativePath(object.diff_reference, "EvidenceBundle.diff_reference");
   if (!Array.isArray(object.quality_gate_results) || !Array.isArray(object.tests_run)) throw new Error("EvidenceBundle gate/test results must be arrays");
   object.quality_gate_results.forEach((entry, index) => {
-    const gate = exactObject(entry, `EvidenceBundle.quality_gate_results[${index}]`, ["gate_id", "outcome", "evidence_hash"]);
-    identifier(gate.gate_id, `${index}.gate_id`); oneOf(gate.outcome, ["passed", "failed", "not_applicable"], `${index}.outcome`); hash(gate.evidence_hash, `${index}.evidence_hash`);
+    const gate = exactObject(entry, `EvidenceBundle.quality_gate_results[${index}]`, ["gate_id", "outcome", "evidence_hash", "summary"]);
+    identifier(gate.gate_id, `${index}.gate_id`); oneOf(gate.outcome, ["passed", "failed", "not_applicable", "not_run"], `${index}.outcome`); hash(gate.evidence_hash, `${index}.evidence_hash`); safeText(gate.summary, `${index}.summary`);
   });
   object.tests_run.forEach((entry, index) => {
     const test = exactObject(entry, `EvidenceBundle.tests_run[${index}]`, ["command_id", "exit_code", "output_hash"]);
@@ -252,16 +266,23 @@ export function assertEvidenceBundle(value: unknown): asserts value is EvidenceB
   });
   stringArray(object.scope_violations, "EvidenceBundle.scope_violations", false, true); stringArray(object.privacy_violations, "EvidenceBundle.privacy_violations", false, true);
   stringArray(object.remaining_risks, "EvidenceBundle.remaining_risks", false, true); stringArray(object.redaction_notes, "EvidenceBundle.redaction_notes", false, true);
-  const secret = exactObject(object.secret_scan_summary, "EvidenceBundle.secret_scan_summary", ["outcome", "findings"]);
-  oneOf(secret.outcome, ["passed", "failed", "not_run"], "EvidenceBundle.secret_scan_summary.outcome"); integer(secret.findings, "EvidenceBundle.secret_scan_summary.findings", 0);
+  const secret = exactObject(object.secret_scan_summary, "EvidenceBundle.secret_scan_summary", ["outcome", "findings", "baseline_findings", "new_findings"]);
+  oneOf(secret.outcome, ["passed", "failed", "not_run"], "EvidenceBundle.secret_scan_summary.outcome"); integer(secret.findings, "EvidenceBundle.secret_scan_summary.findings", 0); integer(secret.baseline_findings, "EvidenceBundle.secret_scan_summary.baseline_findings", 0); integer(secret.new_findings, "EvidenceBundle.secret_scan_summary.new_findings", 0);
   const usage = exactObject(object.usage_metrics, "EvidenceBundle.usage_metrics", ["input_tokens", "output_tokens", "reasoning_tokens"]);
   integer(usage.input_tokens, "EvidenceBundle.usage_metrics.input_tokens", 0); integer(usage.output_tokens, "EvidenceBundle.usage_metrics.output_tokens", 0); integer(usage.reasoning_tokens, "EvidenceBundle.usage_metrics.reasoning_tokens", 0);
   const cost = exactObject(object.cost_metrics, "EvidenceBundle.cost_metrics", ["provider_reported_usd", "estimated_list_usd", "invoice_usd", "chatgpt_quota"]);
   for (const field of ["provider_reported_usd", "estimated_list_usd", "invoice_usd", "chatgpt_quota"] as const) if (cost[field] !== null) finiteNumber(cost[field], `EvidenceBundle.cost_metrics.${field}`, 0);
   integer(object.wall_clock_time_ms, "EvidenceBundle.wall_clock_time_ms", 0); integer(object.repair_count, "EvidenceBundle.repair_count", 0);
+  uniqueStrings(object.attempt_ids as string[], "EvidenceBundle.attempt_ids"); uniqueStrings(object.route_evidence_ids as string[], "EvidenceBundle.route_evidence_ids");
+  if ((object.attempt_summaries as Array<{ attempt_id: string }>).map(item => item.attempt_id).join("\0") !== (object.attempt_ids as string[]).join("\0")) throw new Error("EvidenceBundle attempt summaries do not match attempt IDs");
+  if ((object.route_evidence_summaries as Array<{ evidence_id: string }>).map(item => item.evidence_id).join("\0") !== (object.route_evidence_ids as string[]).join("\0")) throw new Error("EvidenceBundle route summaries do not match route evidence IDs");
+  uniqueStrings(object.files_changed as string[], "EvidenceBundle.files_changed"); uniqueStrings((object.quality_gate_results as Array<{ gate_id: string }>).map(item => item.gate_id), "EvidenceBundle.quality_gate_results");
+  if ([...(object.files_changed as string[])].sort().some((item, index) => item !== (object.files_changed as string[])[index])) throw new Error("EvidenceBundle.files_changed must be sorted");
   hash(object.bundle_hash, "EvidenceBundle.bundle_hash");
   if (!hashesEqual(object.bundle_hash as string, hashEvidenceBundle(object as unknown as EvidenceBundle))) throw new Error("EvidenceBundle hash does not match canonical content");
 }
+
+function uniqueStrings(values: string[], name: string): void { if (new Set(values).size !== values.length) throw new Error(`${name} must not contain duplicates`); }
 
 export function assertRequestBudget(value: unknown, name = "RequestBudget"): asserts value is RequestBudget {
   const object = exactObject(value, name, ["max_input_tokens", "max_output_tokens", "max_tool_calls", "max_wall_time_ms", "max_estimated_cost_usd", "billing_mode"]);

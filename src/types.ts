@@ -170,21 +170,30 @@ export interface EvidenceBundle {
   bundle_id: string;
   run_id: string;
   task_id: string;
+  contract_provenance: "canonical" | "legacy_bridge";
   task_package_hash: string;
   route_binding_hash: string;
   policy_hash: string;
+  quality_policy_hash: string;
+  approval_hash: string;
+  execution_context_hash: string;
+  isolation_hash: string;
+  worktree_id: string;
   base_commit: string;
   worktree_head: string;
   attempt_ids: string[];
   route_evidence_ids: string[];
+  attempt_summaries: Array<{ attempt_id: string; stage: Stage; status: AttemptStatus; failure_class: FailureClass }>;
+  route_evidence_summaries: Array<{ evidence_id: string; provider: string; model: string; verification_status: ProviderRouteEvidence["verificationStatus"]; request_id_present: boolean }>;
   files_changed: string[];
+  content_snapshot_hash: string;
   diff_hash: string;
   diff_reference: string;
-  quality_gate_results: Array<{ gate_id: string; outcome: "passed" | "failed" | "not_applicable"; evidence_hash: string }>;
+  quality_gate_results: Array<{ gate_id: string; outcome: "passed" | "failed" | "not_applicable" | "not_run"; evidence_hash: string; summary: string }>;
   tests_run: Array<{ command_id: string; exit_code: number; output_hash: string }>;
   scope_violations: string[];
   privacy_violations: string[];
-  secret_scan_summary: { outcome: "passed" | "failed" | "not_run"; findings: number };
+  secret_scan_summary: { outcome: "passed" | "failed" | "not_run"; findings: number; baseline_findings: number; new_findings: number };
   usage_metrics: { input_tokens: number; output_tokens: number; reasoning_tokens: number };
   cost_metrics: { provider_reported_usd: number | null; estimated_list_usd: number | null; invoice_usd: number | null; chatgpt_quota: number | null };
   wall_clock_time_ms: number;
@@ -192,6 +201,57 @@ export interface EvidenceBundle {
   remaining_risks: string[];
   redaction_notes: string[];
   bundle_hash: string;
+}
+
+export type QualityCommandId = "format_check" | "lint" | "typecheck" | "unit_tests" | "build" | "project_acceptance";
+
+export interface QualityGatePolicy {
+  version: 1;
+  policy_id: string;
+  command_ids: QualityCommandId[];
+  command_registry_hash: string;
+  max_diff_bytes: number;
+  max_file_bytes: number;
+  max_output_bytes: number;
+  policy_hash: string;
+}
+
+export interface QualityCommandSpec {
+  command_id: QualityCommandId;
+  executable: string;
+  args: string[];
+  timeout_ms: number;
+}
+
+export interface QualityGateRequest {
+  run_id: string;
+  task_id: string;
+  base_commit: string;
+  plan_hash: string;
+  approval_hash: string;
+  isolation_hash: string;
+  worktree_id: string;
+  write_scope: string[];
+  command_ids: QualityCommandId[];
+  policy_hash: string;
+  effective_policy_hash: string;
+}
+
+export interface QualityGateReport {
+  version: 1;
+  passed: boolean;
+  worktree_head: string;
+  files_changed: string[];
+  content_snapshot_hash: string;
+  diff_hash: string;
+  diff_reference: string;
+  quality_gate_results: EvidenceBundle["quality_gate_results"];
+  tests_run: EvidenceBundle["tests_run"];
+  scope_violations: string[];
+  privacy_violations: string[];
+  secret_scan_summary: EvidenceBundle["secret_scan_summary"];
+  wall_clock_time_ms: number;
+  redaction_notes: string[];
 }
 
 export interface UserPolicy {
@@ -303,7 +363,8 @@ export interface PlanPacket {
   allowedFiles: string[];
   constraints: string[];
   acceptance: string[];
-  validationCommands: string[];
+  validationCommands: QualityCommandId[];
+  qualityPolicyHash: string;
   route: RouteDecision;
   routeBinding: RouteBinding;
 }
@@ -427,6 +488,8 @@ export interface RunState {
   routeEvidence?: RouteEvidence[];
   usage?: UsageMetrics;
   normalizedEquivalentUsd?: number;
+  evidenceBundleHash?: string;
+  evidenceBundleReference?: string;
 }
 
 export interface ProviderRequest {
@@ -440,6 +503,7 @@ export interface ProviderRequest {
   allowedFiles?: string[];
   executorCapabilities?: ExecutorCapabilityGrant;
   routeBinding?: RouteBinding;
+  qualityGate?: QualityGateRequest;
   tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
 }
 

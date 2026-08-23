@@ -203,16 +203,22 @@ describe("strict schema-equivalent validation", () => {
     expect(() => assertAttemptRecord({ ...attempt, unknown: true })).toThrow(/unknown field/);
 
     const bundle = createEvidenceBundle({
-      version: 1, bundle_id: "bundle-1", run_id: "synthetic-run", task_id: subject.taskPackage.task_id,
+      version: 1, bundle_id: "bundle-1", run_id: "synthetic-run", task_id: subject.taskPackage.task_id, contract_provenance: "canonical",
       task_package_hash: subject.taskPackage.task_package_hash, route_binding_hash: subject.routeBinding.route_binding_hash,
-      policy_hash: subject.effectivePolicy.policy_hash, base_commit: COMMIT, worktree_head: COMMIT,
-      attempt_ids: [attempt.attempt_id], route_evidence_ids: [], files_changed: ["src/a.ts"], diff_hash: "d".repeat(64),
+      policy_hash: subject.effectivePolicy.policy_hash, quality_policy_hash: "3".repeat(64), approval_hash: "4".repeat(64), execution_context_hash: "5".repeat(64), isolation_hash: "6".repeat(64), worktree_id: "synthetic-worktree", base_commit: COMMIT, worktree_head: COMMIT,
+      attempt_ids: [attempt.attempt_id], route_evidence_ids: [], attempt_summaries: [{ attempt_id: attempt.attempt_id, stage: "EXECUTE", status: "PREPARED", failure_class: "none" }], route_evidence_summaries: [], files_changed: ["src/a.ts"], content_snapshot_hash: "7".repeat(64), diff_hash: "d".repeat(64),
       diff_reference: ".router-state/evidence/synthetic.diff", quality_gate_results: [], tests_run: [], scope_violations: [], privacy_violations: [],
-      secret_scan_summary: { outcome: "passed", findings: 0 }, usage_metrics: { input_tokens: 0, output_tokens: 0, reasoning_tokens: 0 },
+      secret_scan_summary: { outcome: "passed", findings: 0, baseline_findings: 0, new_findings: 0 }, usage_metrics: { input_tokens: 0, output_tokens: 0, reasoning_tokens: 0 },
       cost_metrics: { provider_reported_usd: null, estimated_list_usd: null, invoice_usd: null, chatgpt_quota: null },
       wall_clock_time_ms: 0, repair_count: 0, remaining_risks: ["Synthetic S1 contract only"], redaction_notes: ["No real data"],
     });
     expect(() => assertEvidenceBundle(bundle)).not.toThrow();
     expect(bundle.bundle_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(Object.isFrozen(bundle)).toBe(true); expect(Object.isFrozen(bundle.files_changed)).toBe(true); expect(Object.isFrozen(bundle.secret_scan_summary)).toBe(true);
+    expect(() => bundle.files_changed.push("src/b.ts")).toThrow();
+    expect(() => assertEvidenceBundle({ ...bundle, quality_gate_results: [
+      { gate_id: "scope", outcome: "passed", evidence_hash: "8".repeat(64), summary: "synthetic" },
+      { gate_id: "scope", outcome: "passed", evidence_hash: "8".repeat(64), summary: "synthetic" },
+    ] })).toThrow(/duplicates/);
   });
 });

@@ -8,6 +8,7 @@ import { StateStore } from "./persistence.js";
 import { CodexCliAdapter } from "./providers/codex-cli.js";
 import { DeepSeekChatAdapter } from "./providers/deepseek-chat.js";
 import { LocalValidationAdapter } from "./providers/local.js";
+import { DEFAULT_QUALITY_GATE_POLICY } from "./quality-gate.js";
 import { RoutingProviderAdapter } from "./providers/routing.js";
 import { runLiveBenchmark } from "./live-benchmark.js";
 import type { Complexity, ProviderAdapter, Risk, SensitivityClass, TaskKind } from "./types.js";
@@ -20,7 +21,8 @@ function services(stateRoot?: string) {
   const openai = new CodexCliAdapter({ executable: process.env.CODEX_CLI_PATH });
   const deepseek = new DeepSeekChatAdapter({ credentialResolver: authAlias => loadDeepSeekApiKey(authAlias) });
   const providers = new RoutingProviderAdapter(new Map<string, ProviderAdapter>([["openai-codex", openai], ["deepseek", deepseek]]));
-  return { store, router: new RouterOrchestrator(providers, new LocalValidationAdapter(), store) };
+  const local = new LocalValidationAdapter({ policy: DEFAULT_QUALITY_GATE_POLICY, evidenceRoot: store.root });
+  return { store, router: new RouterOrchestrator(providers, local, store, undefined, undefined, DEFAULT_QUALITY_GATE_POLICY) };
 }
 
 program.command("auto")

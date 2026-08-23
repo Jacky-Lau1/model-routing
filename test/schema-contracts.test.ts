@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { assertApprovalRecord, assertAttemptRecord, assertEvidenceBundle, assertExecutionContext, assertRouteBinding, assertTaskPackage } from "../src/contracts.js";
+import { assertQualityGatePolicy } from "../src/quality-gate.js";
 
 const root = process.cwd();
 
@@ -38,6 +39,15 @@ describe("S1 JSON Schema artifacts", () => {
       const schema = JSON.parse(await readFile(path.join(root, "config", file), "utf8")) as { $ref: string };
       expect(schema.$ref).toContain(`#/$defs/${definition}`);
     }
+  });
+
+  it("keeps the S6 quality policy schema and default-deny example strict and hash-valid", async () => {
+    const schema = JSON.parse(await readFile(path.join(root, "config/quality-gate-policy.schema.json"), "utf8")) as any;
+    expect(schema.additionalProperties).toBe(false); expect(schema.required).toContain("command_registry_hash");
+    const example = JSON.parse(await readFile(path.join(root, "config/quality-gate-policy.example.json"), "utf8"));
+    expect(() => assertQualityGatePolicy(example)).not.toThrow(); expect(example.command_ids).toEqual([]);
+    const legacyPlan = JSON.parse(await readFile(path.join(root, "config/plan-packet.schema.json"), "utf8")) as any;
+    expect(legacyPlan.required).toContain("qualityPolicyHash"); expect(legacyPlan.properties.validationCommands.items.enum).not.toContain("npm test");
   });
 
   it("keeps every synthetic JSON example strict and hash-valid", async () => {

@@ -31,7 +31,10 @@ export function isAllowedPath(file: string, allowed: string[]): boolean { return
 function matches(file: string, pattern: string): boolean {
   const normalized = normalize(pattern);
   const escaped = normalized.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, "\u0000").replace(/\*/g, "[^/]*").replace(/\u0000/g, ".*");
-  return new RegExp(`^${escaped}$`, "i").test(file);
+  // Approval scopes are canonical, case-sensitive strings on every platform.
+  // This fails closed for a not-yet-existing Windows leaf whose on-disk case
+  // cannot otherwise be compared physically.
+  return new RegExp(`^${escaped}$`).test(file);
 }
 function normalize(value: string): string { return value.replace(/\\/g, "/").replace(/^\.\//, ""); }
 async function hashFile(file: string): Promise<string> { try { return createHash("sha256").update(await readFile(file)).digest("hex"); } catch { return "<missing>"; } }

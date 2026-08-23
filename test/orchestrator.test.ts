@@ -12,6 +12,8 @@ import { StateStore } from "../src/persistence.js";
 import { GitWorktreeManager } from "../src/worktree.js";
 import { DeepSeekChatAdapter } from "../src/providers/deepseek-chat.js";
 import { RoutingProviderAdapter } from "../src/providers/routing.js";
+import { LocalValidationAdapter } from "../src/providers/local.js";
+import { DEFAULT_QUALITY_GATE_POLICY, createQualityGatePolicy, hashQualityCommandCatalog, type QualityCommandRunner } from "../src/quality-gate.js";
 import { DEEPSEEK_ENDPOINT_ORIGIN, DEEPSEEK_ENDPOINT_PATH } from "../src/route-preflight.js";
 import type { ProviderAdapter, ProviderRequest, ProviderResponse, RouteBinding } from "../src/types.js";
 
@@ -36,7 +38,11 @@ class MockModel implements ProviderAdapter {
 class MockLocal implements ProviderAdapter {
   readonly provider = "local" as const;
   readonly adapterId = "local-validation";
-  async invoke(request: ProviderRequest): Promise<ProviderResponse> { return { text: JSON.stringify({ passed: true, results: [] }), requestId: "local", provider: "local", model: request.route.model, usage: { ...usage, inputTokens: 0, outputTokens: 0 } }; }
+  async preflight(_request: ProviderRequest): Promise<void> {}
+  async invoke(request: ProviderRequest): Promise<ProviderResponse> {
+    const evidenceRoot = path.resolve(request.workingDirectory!, "..", "..", "..", "state");
+    return new LocalValidationAdapter({ policy: DEFAULT_QUALITY_GATE_POLICY, evidenceRoot }).invoke(request);
+  }
 }
 
 function mockRouteEvidence(request: ProviderRequest, requestId: string) {
@@ -66,7 +72,6 @@ class WritingLocal extends MockLocal {
   readonly workingDirectories: string[] = [];
   override async invoke(request: ProviderRequest): Promise<ProviderResponse> {
     this.workingDirectories.push(request.workingDirectory ?? "");
-    await mkdir(path.join(request.workingDirectory!, "dist")); await writeFile(path.join(request.workingDirectory!, "dist", "validation.txt"), "synthetic\n");
     return super.invoke(request);
   }
 }
@@ -94,6 +99,11 @@ class ScopeViolatingModel extends MockModel {
     if (request.stage === "EXECUTE") await writeFile(path.join(request.workingDirectory!, "outside-plan.txt"), "synthetic violation\n");
     return super.invoke(request);
   }
+}
+
+class RepairCountingModel extends MockModel {
+  repairCalls = 0;
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> { if (request.stage === "REPAIR") this.repairCalls++; return super.invoke(request); }
 }
 
 class BadPreimageModel extends MockModel {
@@ -168,11 +178,13 @@ describe("approval workflow", () => {
     const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main });
     expect(planned.state).toBe("WAITING_APPROVAL");
     expect(planned.approval).toBeUndefined();
+    expect(planned.plan?.validationCommands).toEqual([]); expect(planned.plan?.qualityPolicyHash).toBe(DEFAULT_QUALITY_GATE_POLICY.policy_hash);
     const completed = await router.approve(planned.taskId, subject.main);
     expect(completed.lastError).toBeUndefined();
     expect(completed.state).toBe("COMPLETED");
     expect(completed.routeEvidence?.map(item => item.expectedModel)).toEqual(["gpt-5.6-terra", "deepseek-v4-flash", "local-quality-gates", "gpt-5.6-terra"]);
-    expect(completed.usage?.cachedInputTokens).toBe(8);
+    expect(completed.usage?.cachedInputTokens).toBe(6);
+    expect(completed.evidenceBundleHash).toMatch(/^[a-f0-9]{64}$/); expect(completed.evidenceBundleReference).toMatch(/^evidence\//);
     expect(completed.result).toBe("accepted");
   });
 
@@ -291,6 +303,20 @@ describe("approval workflow", () => {
     expect(blocked.state).toBe("BLOCKED");
     expect((await new AttemptPersistence(subject.store.root).loadWorkflow(planned.taskId)).state).toBe("BLOCKED");
     await expect(access(path.join(subject.main, "outside-plan.txt"))).rejects.toThrow();
+  });
+
+  it("runs one bounded repair for an ordinary approved quality-command failure", async () => {
+    const subject = await workflowFixture(); const model = new RepairCountingModel(); const configured = qualityFixture(subject, "lint", async () => ({ exitCode: 2, stdout: "synthetic lint failure", stderr: "", timedOut: false, overflowed: false }));
+    const router = new RouterOrchestrator(model, configured.local, subject.store, undefined, subject.worktrees, configured.policy);
+    const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const blocked = await router.approve(planned.taskId, subject.main);
+    expect(blocked.state).toBe("BLOCKED"); expect(model.repairCalls).toBe(1); expect(configured.runner).toHaveBeenCalledTimes(2); expect(blocked.evidenceBundleHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("does not repair a quality gate security/freeze failure", async () => {
+    const subject = await workflowFixture(); const model = new RepairCountingModel(); const configured = qualityFixture(subject, "format_check", async (_spec, cwd) => { await mkdir(path.join(cwd, "dist")); await writeFile(path.join(cwd, "dist", "unexpected.txt"), "synthetic\n"); return { exitCode: 0, stdout: "", stderr: "", timedOut: false, overflowed: false }; });
+    const router = new RouterOrchestrator(model, configured.local, subject.store, undefined, subject.worktrees, configured.policy);
+    const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const blocked = await router.approve(planned.taskId, subject.main);
+    expect(blocked.state).toBe("BLOCKED"); expect(model.repairCalls).toBe(0); expect(configured.runner).toHaveBeenCalledOnce(); expect(blocked.lastError).toMatch(/security or evidence boundary/); expect(blocked.evidenceBundleHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("marks an invalid structured preimage AMBIGUOUS without changing main or retrying", async () => {
@@ -427,4 +453,11 @@ function deepResponse(payload: unknown): Response {
   Object.defineProperty(response, "url", { value: `${DEEPSEEK_ENDPOINT_ORIGIN}${DEEPSEEK_ENDPOINT_PATH}` });
   Object.defineProperty(response, "redirected", { value: false });
   return response;
+}
+
+function qualityFixture(subject: { root: string; store: StateStore }, commandId: "lint" | "format_check", implementation: QualityCommandRunner) {
+  const spec = { command_id: commandId, executable: path.join(subject.root, "trusted", "synthetic-quality.exe"), args: commandId === "format_check" ? ["--check"] : ["--synthetic-lint"], timeout_ms: 1_000 } as const;
+  const policy = createQualityGatePolicy({ version: 1, policy_id: `synthetic-${commandId}`, command_ids: [commandId], command_registry_hash: hashQualityCommandCatalog([spec]), max_diff_bytes: 1024 * 1024, max_file_bytes: 64 * 1024, max_output_bytes: 4096 });
+  const runner = vi.fn(implementation); const local = new LocalValidationAdapter({ policy, commandCatalog: [spec], evidenceRoot: subject.store.root, runCommand: runner });
+  return { policy, local, runner };
 }

@@ -33,7 +33,7 @@ describe("deterministic routing", () => {
 
 describe("approval binding", () => {
   const route = decideRoute("EXECUTE", classifyTask("Fix a parser bug"));
-  const plan: PlanPacket = { version: 1, taskId: "t1", objective: "fix", nonGoals: [], steps: ["edit"], readFiles: ["src/a.ts"], writeFiles: ["src/a.ts"], dataClassification: "public", allowedFiles: ["src/a.ts"], constraints: [], acceptance: ["tests pass"], validationCommands: ["npm test"], route, routeBinding: buildLegacyRouteBinding(route, ["src/a.ts"], ["src/a.ts"]) };
+  const plan: PlanPacket = { version: 1, taskId: "t1", objective: "fix", nonGoals: [], steps: ["edit"], readFiles: ["src/a.ts"], writeFiles: ["src/a.ts"], dataClassification: "public", allowedFiles: ["src/a.ts"], constraints: [], acceptance: ["tests pass"], validationCommands: ["unit_tests"], qualityPolicyHash: "a".repeat(64), route, routeBinding: buildLegacyRouteBinding(route, ["src/a.ts"], ["src/a.ts"]) };
   it("accepts an unchanged plan and route", () => expect(() => assertApproval(plan, approvePlan(plan))).not.toThrow());
   it("invalidates approval after plan change", () => {
     const approval = approvePlan(plan);

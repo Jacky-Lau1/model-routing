@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "policy_id": "synthetic-default-deny",
+  "command_ids": [],
+  "command_registry_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "max_diff_bytes": 2097152,
+  "max_file_bytes": 524288,
+  "max_output_bytes": 65536,
+  "policy_hash": "1abdd3ed9b753768268e54ebf09434337781589116c58186a48609113f6aa2af"
+}

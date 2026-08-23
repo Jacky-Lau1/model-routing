@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/model-routing/quality-gate-policy.schema.json",
+  "title": "Approved S6 Quality Gate Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "policy_id", "command_ids", "command_registry_hash", "max_diff_bytes", "max_file_bytes", "max_output_bytes", "policy_hash"],
+  "properties": {
+    "version": { "const": 1 },
+    "policy_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+    "command_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["format_check", "lint", "typecheck", "unit_tests", "build", "project_acceptance"] }
+    },
+    "command_registry_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "max_diff_bytes": { "type": "integer", "minimum": 1 },
+    "max_file_bytes": { "type": "integer", "minimum": 1 },
+    "max_output_bytes": { "type": "integer", "minimum": 1 },
+    "policy_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}
