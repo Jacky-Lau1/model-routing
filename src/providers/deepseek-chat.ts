@@ -1,6 +1,6 @@
 import { SafeExecutor } from "../safe-executor.js";
 import { assertExecutorGrantMatchesBinding, DEEPSEEK_ADAPTER_ID, preflightRouteBinding } from "../route-preflight.js";
-import type { ProviderAdapter, ProviderRequest, ProviderResponse, ProviderRouteEvidence, RequestIdSource, RouteTransportObservation, UsageMetrics } from "../types.js";
+import type { ProviderAdapter, ProviderRequest, ProviderResponse, ProviderRouteEvidence, RequestIdSource, RouteTransportObservation, UsageAvailability, UsageMetrics } from "../types.js";
 
 interface DeepSeekOptions {
   fetchImpl?: typeof fetch;
@@ -53,7 +53,7 @@ export class DeepSeekChatAdapter implements ProviderAdapter {
       { role: "system", content: request.stablePrefix },
       { role: "user", content: `${request.projectSummary}\n\n${request.dynamicInput}` },
     ];
-    const usage = emptyUsage(); const requestIds: string[] = []; const requestIdSources = new Set<RequestIdSource>(); const observations: RouteTransportObservation[] = []; let toolCallsUsed = 0;
+    const usage = emptyUsage(); const usageAvailability: UsageAvailability = { inputTokens: true, outputTokens: true, reasoningTokens: true }; const requestIds: string[] = []; const requestIdSources = new Set<RequestIdSource>(); const observations: RouteTransportObservation[] = []; let toolCallsUsed = 0;
     const tools = executor ? TOOL_DEFINITIONS : undefined;
     for (let turn = 0; turn <= request.route.maxToolTurns; turn++) {
       const body: Record<string, unknown> = {
@@ -64,11 +64,12 @@ export class DeepSeekChatAdapter implements ProviderAdapter {
       if (tools) body.tools = tools;
       const transport = await this.call(body, apiKey, request.route.timeoutMs, targetUrl, binding.model_id);
       observations.push(transport.observation);
-      if (!transport.valid) return invalidProviderResponse(request, transport, usage, observations);
+      if (!transport.valid) return invalidProviderResponse(request, transport, usage, { inputTokens: false, outputTokens: false, reasoningTokens: false }, observations);
       requestIds.push(transport.requestId!);
       requestIdSources.add(transport.requestIdSource);
       const response = transport.payload;
-      accumulateUsage(usage, response.usage ?? {});
+      const observedUsage = accumulateUsage(usage, response.usage);
+      for (const key of ["inputTokens", "outputTokens", "reasoningTokens"] as const) usageAvailability[key] = usageAvailability[key] && observedUsage[key];
       const assistant = response.choices?.[0]?.message;
       if (!assistant) throw new Error("DeepSeek returned no assistant message");
       const toolCalls = assistant.tool_calls as Array<any> | undefined;
@@ -77,7 +78,7 @@ export class DeepSeekChatAdapter implements ProviderAdapter {
         if (!text) throw new Error("DeepSeek returned no final content");
         const requestId = requestIds[0] ?? null;
         return {
-          text, requestId, provider: "deepseek", model: binding.model_id, usage,
+          text, requestId, provider: "deepseek", model: binding.model_id, usage, usageAvailability,
           routeEvidence: routeEvidence(request, requestIds, requestIdSource(requestIdSources), observations),
           structuredPatches: executor?.proposals(),
         };
@@ -156,10 +157,10 @@ function routeEvidence(request: ProviderRequest, requestIds: string[], source: R
   };
 }
 
-function invalidProviderResponse(request: ProviderRequest, transport: TransportResponse, usage: UsageMetrics, observations: RouteTransportObservation[]): ProviderResponse {
+function invalidProviderResponse(request: ProviderRequest, transport: TransportResponse, usage: UsageMetrics, usageAvailability: UsageAvailability, observations: RouteTransportObservation[]): ProviderResponse {
   return {
     text: "Provider response rejected before local tool processing", requestId: transport.requestId,
-    provider: "deepseek", model: transport.observation.actualModel ?? "", usage,
+    provider: "deepseek", model: transport.observation.actualModel ?? "", usage, usageAvailability,
     routeEvidence: {
       ...routeEvidenceBase(request), actualOrigin: transport.observation.actualOrigin, actualPath: transport.observation.actualPath,
       actualModel: transport.observation.actualModel, requestId: transport.requestId,
@@ -236,4 +237,13 @@ function normalizeApiKey(value: string | undefined): string | undefined {
   return trimmed;
 }
 function emptyUsage(): UsageMetrics { return { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 }; }
-function accumulateUsage(target: UsageMetrics, source: any): void { target.inputTokens += source.prompt_tokens ?? 0; target.outputTokens += source.completion_tokens ?? 0; target.reasoningTokens += source.completion_tokens_details?.reasoning_tokens ?? 0; target.cacheHitTokens += source.prompt_cache_hit_tokens ?? 0; target.cacheMissTokens += source.prompt_cache_miss_tokens ?? 0; }
+function accumulateUsage(target: UsageMetrics, source: any): UsageAvailability {
+  const availability: UsageAvailability = { inputTokens: false, outputTokens: false, reasoningTokens: false };
+  if (!source) return availability;
+  if (Number.isFinite(source.prompt_tokens)) { target.inputTokens += source.prompt_tokens; availability.inputTokens = true; }
+  if (Number.isFinite(source.completion_tokens)) { target.outputTokens += source.completion_tokens; availability.outputTokens = true; }
+  if (Number.isFinite(source.completion_tokens_details?.reasoning_tokens)) { target.reasoningTokens += source.completion_tokens_details.reasoning_tokens; availability.reasoningTokens = true; }
+  target.cacheHitTokens += Number.isFinite(source.prompt_cache_hit_tokens) ? source.prompt_cache_hit_tokens : 0;
+  target.cacheMissTokens += Number.isFinite(source.prompt_cache_miss_tokens) ? source.prompt_cache_miss_tokens : 0;
+  return availability;
+}

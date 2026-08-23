@@ -1,6 +1,6 @@
 # 16｜Orchestrator-first 最终实施计划与阶段门
 
-> 状态：已接受的实施基线；S0–S5 已完成离线阶段门，S6–S9 尚未实施，规定的真实验证尚未运行。
+> 状态：已接受的实施基线；S0–S6 已完成离线阶段门，S7–S9 尚未开始，规定的真实验证尚未运行。
 >
 > 更新时间：2026-08-21。
 >
@@ -50,7 +50,7 @@ Codex GPT Final Review
 | 审批哈希 | Implemented / offline tested | S1 新合同完整绑定 task/route/context/policy；legacy 路径已绑定 isolation hash 与 immutable RouteBinding，S7 新 core 接入仍待完成 |
 | DeepSeek Direct Adapter | Route tuple + capability restricted / offline attack-tested | S4 manifest/patch capability 与 S5 exact endpoint/auth/model/protocol/逐轮 mock evidence 已接入；不证明 network peer |
 | Codex CLI planning/review | Legacy unbound only / architecture mismatch | 后台另起 Codex，不等于当前 GPT Supervisor；bound transport 因 endpoint/auth/header 不可观测而 spawn 前失败 |
-| 主 working tree scope guard | Implemented / preventive + post-hoc | S4 Direct Adapter 预防性 capability 与 worktree 后置检查已接入；S6 完整 gate 仍待完成 |
+| 主 working tree scope guard | Implemented / preventive + frozen evidence | S4 Direct Adapter 预防性 capability 与 S6 physical snapshot/report freeze 已接入；仍不是 OS sandbox |
 | 低写入状态持久化 | Implemented / offline tested | S2 已完成副作用前 checkpoint、幂等锁、原子写和 conservative recovery |
 | 原生 DeepSeek 菜单/profile | Implemented experiment / deprecated as default | 与 Orchestrator-first 正常体验冲突 |
 | Isolated worktree | Implemented / offline tested | run-scoped detached worktree、dirty evidence、ownership-safe lifecycle 和冲突检测已通过 synthetic repo 测试；不是 OS sandbox |
@@ -58,7 +58,7 @@ Codex GPT Final Review
 | OS sandbox / low-privilege process | Design only | Job Object/AppContainer/低权限账户仍为 TODO-03 |
 | Immutable RouteBinding | Canonical + legacy bridge invoked / offline tested | canonical/legacy builder 深度冻结；legacy plan/approval/fingerprint 与 S2 prepare preflight 已接入，S7 full core 仍待迁移 |
 | Ambiguous paid-call handling | Implemented / offline tested | S2 timeout/reset/response lost → AMBIGUOUS/BLOCKED，禁止自动重发 |
-| EvidenceBundle | Design only | 尚未实现 |
+| EvidenceBundle | Implemented / offline tested | S6 EvidenceBundle v2 由完整 QualityGateReport 生成并自校验；当前仍是 legacy bridge projection |
 | GPT foreground MCP/skill | Design only | 尚未实现 |
 | Project policy | Contract implemented / offline tested | S1 user/project 交集与默认 deny 已验证；S7 新 core 接入仍待完成 |
 | Orchestrator-first live validation | Not run | 旧架构的真实调用不能替代新架构验证 |
@@ -615,6 +615,14 @@ S5 阶段门：PASS。结论仅限 immutable binding、local preflight 和 injec
 - 完整 diff 不默认复制到长期日志。
 
 阶段门：GPT 不依赖执行器的“Done”即可从 EvidenceBundle 判断范围、测试和风险。
+
+完成记录（2026-08-23）：snapshot 在读取前验证 lexical/physical containment 和文件身份；symlink/reparse 越界、敏感路径及读写竞态失败关闭。Git 冻结只使用只读 index/status/diff 证据，不调用 `write-tree`。secret baseline 按 finding 指纹多重集比较，未变化 finding 只在 review diff 中脱敏，新增/增加失败关闭；raw diff bytes 在脱敏前执行 16 MiB ceiling，schema 与 runtime 的 16/4/1 MiB 上限一致。
+
+命令只能来自批准的固定 executable/argv catalog，并保存 bounded/redacted output summary、timeout 与 overflow 状态。production spawn/kill/output-limit、artifact mutation/hash、report replay/tamper、post-artifact worktree drift 都有离线回归。QualityGateReport 完整绑定 request/base/plan/approval/isolation/worktree/policy/command set、pre/post snapshot、artifact 和 gate 顺序并带 self hash；EvidenceBundle v2 保存 attempts/route/gate/usage/cost/risk 摘要，不可得 usage 为 `null`，真实零仍为 `0`。
+
+零费用证据：TypeScript `--noEmit`；S6 定向 7/7 files、118/118 tests；全量 19/19 files、323/323 tests。由于环境无 `npx`，使用仓库现有依赖的 Node 等价入口并以 `--configLoader runner --no-cache` 避免写 `node_modules`；测试仅写系统临时 synthetic repos。未读取真实 config/auth/DPAPI/credential-bearing env 值；最终文档审计的一次非敏感 `USERPROFILE` locator 意外展开见 `docs/23`。未调用 API/live benchmark。
+
+S6 阶段门：PASS。边界仍包括 trusted project commands 非 OS sandbox、启发式 secret scan、legacy bridge projection、DNS peer/proxy/TLS 未观测；不构成真实 provider route 或 production readiness。S7 尚未开始。
 
 ### S7｜GPT 前台接口：Core CLI → STDIO MCP → Thin Skill
 

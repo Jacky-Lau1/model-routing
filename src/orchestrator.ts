@@ -11,13 +11,13 @@ import { estimateEquivalentUsd, PRICING_CATALOG_VERSION } from "./cost.js";
 import { StateStore, transitionState } from "./persistence.js";
 import { decideRoute } from "./policy.js";
 import { redactError } from "./redaction.js";
-import { DEFAULT_QUALITY_GATE_POLICY, assertQualityGatePolicy, assertQualityGateReport, persistEvidenceBundle, readEvidenceArtifact } from "./quality-gate.js";
+import { DEFAULT_QUALITY_GATE_POLICY, assertQualityGatePolicy, assertQualityGateReportForRequest, persistEvidenceBundle, readEvidenceArtifact } from "./quality-gate.js";
 import { adapterIdFor, buildLegacyRouteBinding, freezeRouteBinding, preflightRouteBinding } from "./route-preflight.js";
 import { applyStructuredPatches, buildExecutorCapabilityGrant } from "./safe-executor.js";
 import { assertLegacyTransition, canLegacyTransition } from "./state-machine.js";
-import { assertAllowedChanges, snapshotWorkingTree } from "./scope-guard.js";
+import { assertAllowedChanges, hashScopeSnapshot, snapshotWorkingTree } from "./scope-guard.js";
 import { GitWorktreeManager, type WorktreeLease } from "./worktree.js";
-import type { DataClassification, EvidenceBundle, LegacyWorkflowState, PlanPacket, ProviderAdapter, ProviderRequest, ProviderResponse, QualityGatePolicy, QualityGateReport, RouteDecision, RunState, TaskProfile, UsageMetrics, WorkflowState } from "./types.js";
+import type { DataClassification, EvidenceBundle, LegacyWorkflowState, PlanPacket, ProviderAdapter, ProviderRequest, ProviderResponse, QualityGatePolicy, QualityGateReport, RouteDecision, RunState, TaskProfile, UsageAvailability, UsageMetrics, WorkflowState } from "./types.js";
 
 export interface AutoOptions {
   projectDirectory?: string;
@@ -214,46 +214,54 @@ export class RouterOrchestrator {
       qualityGate: {
         run_id: lease.binding.run_id, task_id: state.taskId, base_commit: lease.binding.base_commit, plan_hash: stableHash(state.plan), approval_hash: approvalHash,
         isolation_hash: lease.binding.isolation_hash, worktree_id: lease.binding.worktree_id, write_scope: [...state.plan.writeFiles], command_ids: [...this.qualityPolicy.command_ids],
-        policy_hash: this.qualityPolicy.policy_hash, effective_policy_hash: effectivePolicyHash,
+        policy_hash: this.qualityPolicy.policy_hash, effective_policy_hash: effectivePolicyHash, max_wall_time_ms: this.qualityPolicy.max_wall_time_ms,
       },
     } satisfies ProviderRequest;
     let parsed: QualityGateReport | undefined;
     const response = await this.invokeTracked(state, this.localAdapter, request, {
       approvalHash, round: state.repairAttempts,
       initial: "VALIDATING", start: "VALIDATING", success: "REVIEW_PENDING",
-      validate: result => { const value: unknown = JSON.parse(result.text); assertQualityGateReport(value); parsed = value; },
+      validate: result => { const value = JSON.parse(result.text) as QualityGateReport; assertQualityGateReportForRequest(value, request.qualityGate!); parsed = value; },
     });
     if (!response || !parsed) return { passed: false, text: JSON.stringify({ passed: false, blocked: "existing attempt" }) };
-    const beforeBundle = await snapshotWorkingTree(projectDirectory);
-    const trackedChanged = [...beforeBundle.keys()].sort(); const reported = new Set(parsed.files_changed);
-    if ((parsed.passed && trackedChanged.join("\0") !== parsed.files_changed.join("\0")) || trackedChanged.some(item => !reported.has(item))) throw new Error("Quality report changed-file set did not match the frozen worktree");
+    const beforeBundle = parsed.passed ? await snapshotWorkingTree(projectDirectory) : undefined;
+    if (beforeBundle) {
+      const trackedChanged = [...beforeBundle.keys()].sort();
+      if (trackedChanged.join("\0") !== parsed.files_changed.join("\0") || hashScopeSnapshot(beforeBundle) !== parsed.worktree_snapshot_hash) throw new Error("Quality report did not match the frozen worktree content");
+    }
     await readEvidenceArtifact(this.store.root, parsed.diff_reference, parsed.diff_hash);
     const bundle = await this.createBundle(state, lease, parsed, response, approvalHash, effectivePolicyHash);
     const bundleReference = await persistEvidenceBundle(this.store.root, bundle);
-    const afterBundle = await snapshotWorkingTree(projectDirectory);
-    if (stableHash([...beforeBundle]) !== stableHash([...afterBundle])) throw new Error("Worktree changed while EvidenceBundle was being persisted");
+    if (beforeBundle) {
+      const afterBundle = await snapshotWorkingTree(projectDirectory);
+      if (stableHash([...beforeBundle]) !== stableHash([...afterBundle])) throw new Error("Worktree changed while EvidenceBundle was being persisted");
+    }
     return { passed: parsed.passed, securityBlocked: qualitySecurityBlocked(parsed), text: JSON.stringify(bundle), route, response, bundle, bundleReference };
   }
 
   private async createBundle(state: RunState, lease: WorktreeLease, report: QualityGateReport, localResponse: ProviderResponse, approvalHash: string, effectivePolicyHash: string): Promise<EvidenceBundle> {
     const attempts = (await this.attempts.status(state.taskId)).attempts;
     const combinedEvidence = [...(state.routeEvidence ?? []), evidence(decideRoute("VALIDATE", state.profile), localResponse)];
-    const routeEvidenceIds = combinedEvidence.map(item => `route-${stableHash(item).slice(0, 24)}`);
-    const usage = mergeUsage(state.usage, localResponse.usage);
+    const routeEvidenceIds = combinedEvidence.map((item, index) => `route-${stableHash({ item, occurrence: index }).slice(0, 24)}`);
+    const usage = state.usage;
+    const availability = state.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true };
     const taskProjectionHash = stableHash(state.plan);
     const executionContextHash = stableHash({ provenance: "legacy_bridge", run_id: lease.binding.run_id, task_id: state.taskId, base_commit: lease.binding.base_commit, worktree_id: lease.binding.worktree_id, isolation_hash: lease.binding.isolation_hash, approval_hash: approvalHash });
     const estimated = state.normalizedEquivalentUsd ?? null;
     const input = {
-      version: 1 as const, bundle_id: `bundle-${stableHash({ run: lease.binding.run_id, content: report.content_snapshot_hash, round: state.repairAttempts }).slice(0, 24)}`,
+      version: 2 as const, bundle_id: `bundle-${stableHash({ run: lease.binding.run_id, content: report.content_snapshot_hash, round: state.repairAttempts }).slice(0, 24)}`,
       run_id: lease.binding.run_id, task_id: state.taskId, contract_provenance: "legacy_bridge" as const,
-      task_package_hash: taskProjectionHash, route_binding_hash: state.plan!.routeBinding.route_binding_hash, policy_hash: effectivePolicyHash, quality_policy_hash: this.qualityPolicy.policy_hash,
+      task_package_hash: taskProjectionHash, route_binding_hash: state.plan!.routeBinding.route_binding_hash, policy_hash: effectivePolicyHash, quality_policy_hash: this.qualityPolicy.policy_hash, quality_policy: { ...this.qualityPolicy, command_ids: [...this.qualityPolicy.command_ids] },
       approval_hash: approvalHash, execution_context_hash: executionContextHash, isolation_hash: lease.binding.isolation_hash, worktree_id: lease.binding.worktree_id,
-      base_commit: lease.binding.base_commit, worktree_head: report.worktree_head, attempt_ids: attempts.map(item => item.attempt_id), route_evidence_ids: routeEvidenceIds,
+      base_commit: lease.binding.base_commit, worktree_head: report.worktree_head,
+      quality_request_hash: report.request_hash, quality_report_hash: report.report_hash, quality_passed: report.passed, quality_write_scope: [...state.plan!.writeFiles], quality_command_ids: [...this.qualityPolicy.command_ids],
+      post_artifact_snapshot_hash: report.post_artifact_snapshot_hash, worktree_snapshot_hash: report.worktree_snapshot_hash,
+      attempt_ids: attempts.map(item => item.attempt_id), route_evidence_ids: routeEvidenceIds,
       attempt_summaries: attempts.map(item => ({ attempt_id: item.attempt_id, stage: item.stage, status: item.status, failure_class: item.failure_class })),
       route_evidence_summaries: combinedEvidence.map((item, index) => ({ evidence_id: routeEvidenceIds[index], provider: item.actualProvider, model: item.actualModel ?? item.expectedModel, verification_status: item.verificationStatus, request_id_present: item.requestId !== null })),
       files_changed: [...report.files_changed], content_snapshot_hash: report.content_snapshot_hash, diff_hash: report.diff_hash, diff_reference: report.diff_reference,
       quality_gate_results: report.quality_gate_results, tests_run: report.tests_run, scope_violations: report.scope_violations, privacy_violations: report.privacy_violations,
-      secret_scan_summary: report.secret_scan_summary, usage_metrics: { input_tokens: usage?.inputTokens ?? 0, output_tokens: usage?.outputTokens ?? 0, reasoning_tokens: usage?.reasoningTokens ?? 0 },
+      secret_scan_summary: report.secret_scan_summary, usage_metrics: { input_tokens: availability.inputTokens ? usage?.inputTokens ?? null : null, output_tokens: availability.outputTokens ? usage?.outputTokens ?? null : null, reasoning_tokens: availability.reasoningTokens ? usage?.reasoningTokens ?? null : null },
       cost_metrics: { provider_reported_usd: null, estimated_list_usd: estimated, invoice_usd: null, chatgpt_quota: null }, wall_clock_time_ms: report.wall_clock_time_ms,
       repair_count: state.repairAttempts, remaining_risks: ["legacy_bridge_contract_projection", "project_commands_not_os_sandboxed", "secret_scan_is_heuristic", "network_peer_and_proxy_not_observable"],
       redaction_notes: report.redaction_notes,
@@ -356,7 +364,8 @@ function move(state: RunState, next: LegacyWorkflowState): RunState { assertLega
 function parseJson<T>(text: string): T { const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]; const source = fenced ?? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1); try { return JSON.parse(source) as T; } catch { throw new Error("Model output was not valid JSON"); } }
 function requiredArray(value: string[] | undefined, name: string): string[] { if (!Array.isArray(value) || value.length === 0) throw new Error(`Plan field ${name} must be a non-empty array`); return value; }
 function evidence(route: RouteDecision, response: ProviderResponse) {
-  const cost = estimateEquivalentUsd(route.model, response.usage);
+  const availability = response.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true };
+  const cost = availability.inputTokens && availability.outputTokens ? estimateEquivalentUsd(route.model, response.usage) : undefined;
   const transport = response.routeEvidence ?? {
     routeBindingHash: null, adapterId: `${route.provider}-legacy`, expectedProvider: route.provider,
     expectedModel: route.model, expectedOrigin: null, expectedPath: null, actualOrigin: null, actualPath: null,
@@ -367,10 +376,14 @@ function evidence(route: RouteDecision, response: ProviderResponse) {
     verificationStatus: "incomplete" as const,
     peerVerification: "not_observable" as const, proxyVerification: "not_observable" as const,
   };
-  return { ...transport, actualProvider: response.provider, verified: transport.verificationStatus === "local", usage: response.usage, normalizedEquivalentUsd: cost, pricingCatalogVersion: cost === undefined ? undefined : PRICING_CATALOG_VERSION };
+  return { ...transport, actualProvider: response.provider, verified: transport.verificationStatus === "local", usage: response.usage, ...(cost === undefined ? {} : { normalizedEquivalentUsd: cost, pricingCatalogVersion: PRICING_CATALOG_VERSION }) };
 }
-function addResponse(state: RunState, route: RouteDecision, response: ProviderResponse): RunState { const item = evidence(route, response); return { ...state, routeEvidence: [...(state.routeEvidence ?? []), item], usage: mergeUsage(state.usage, response.usage), normalizedEquivalentUsd: item.normalizedEquivalentUsd === undefined ? state.normalizedEquivalentUsd : Math.round(((state.normalizedEquivalentUsd ?? 0) + item.normalizedEquivalentUsd) * 1e9) / 1e9 }; }
+function addResponse(state: RunState, route: RouteDecision, response: ProviderResponse): RunState {
+  const item = evidence(route, response); const observed = response.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true };
+  return { ...state, routeEvidence: [...(state.routeEvidence ?? []), item], usage: mergeUsage(state.usage, response.usage), usageAvailability: mergeUsageAvailability(state.usageAvailability, observed, state.usage === undefined), normalizedEquivalentUsd: item.normalizedEquivalentUsd === undefined ? state.normalizedEquivalentUsd : Math.round(((state.normalizedEquivalentUsd ?? 0) + item.normalizedEquivalentUsd) * 1e9) / 1e9 };
+}
 function mergeUsage(a: UsageMetrics | undefined, b: UsageMetrics): UsageMetrics { const base = a ?? { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 }; return Object.fromEntries(Object.keys(base).map(key => [key, base[key as keyof UsageMetrics] + b[key as keyof UsageMetrics]])) as unknown as UsageMetrics; }
+function mergeUsageAvailability(a: UsageAvailability | undefined, b: UsageAvailability, first: boolean): UsageAvailability { return first || !a ? { ...b } : { inputTokens: a.inputTokens && b.inputTokens, outputTokens: a.outputTokens && b.outputTokens, reasoningTokens: a.reasoningTokens && b.reasoningTokens }; }
 function projectSummary(directory?: string): string { return JSON.stringify({ platform: process.platform, project: path.basename(directory ?? process.cwd()), sensitivePathsExcluded: true }); }
 function runIdFor(taskId: string): string { return `run-${stableHash(taskId).slice(0, 24)}`; }
 function preApprovalHash(taskId: string): string { return stableHash({ task_id: taskId, authority: "preapproval-planning" }); }
@@ -395,7 +408,7 @@ function validateDraftPlan(value: DraftPlan): void {
   if (!value || !["public", "private", "secret_restricted"].includes(value.dataClassification)) throw new Error("Plan field dataClassification is invalid");
 }
 function legacyEffectivePolicyHash(plan: PlanPacket, qualityPolicy: QualityGatePolicy): string { return stableHash({ provenance: "legacy_bridge", read_scope: plan.readFiles, write_scope: plan.writeFiles, data_classification: plan.dataClassification, route_binding_hash: plan.routeBinding.route_binding_hash, quality_policy_hash: qualityPolicy.policy_hash }); }
-function qualitySecurityBlocked(report: QualityGateReport): boolean { const securityGates = new Set(["base_identity", "preapply_scope", "changed_files_scope", "forbidden_paths", "secret_scan", "diff_sanity", "final_freeze", "evidence_artifact"]); return report.quality_gate_results.some(item => securityGates.has(item.gate_id) && item.outcome !== "passed"); }
+function qualitySecurityBlocked(report: QualityGateReport): boolean { const securityGates = new Set(["base_identity", "preapply_scope", "changed_files_scope", "forbidden_paths", "secret_scan", "diff_sanity", "final_freeze", "evidence_artifact", "gate_budget"]); return report.quality_gate_results.some(item => securityGates.has(item.gate_id) && item.outcome !== "passed") || report.tests_run.some(item => item.timed_out || item.output_overflowed || item.worktree_mutated); }
 function validateReview(value: Review): void { if (!value || !["pass", "repair", "escalate"].includes(value.verdict)) throw new Error("Review response was incomplete"); }
 
 const PLAN_SCHEMA = JSON.stringify({ type: "object", required: ["steps", "readFiles", "writeFiles", "dataClassification", "acceptance"], properties: { nonGoals: { type: "array", items: { type: "string" } }, steps: { type: "array", items: { type: "string" } }, readFiles: { type: "array", items: { type: "string" } }, writeFiles: { type: "array", items: { type: "string" } }, dataClassification: { enum: ["public", "private", "secret_restricted"] }, constraints: { type: "array", items: { type: "string" } }, acceptance: { type: "array", items: { type: "string" } } }, additionalProperties: false });

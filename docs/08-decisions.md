@@ -149,3 +149,13 @@
 - 状态语义：`routeTupleVerified` 只表示本地可观测 tuple 完整匹配；`verificationStatus=route_tuple_verified_peer_unobserved`、peer/proxy `not_observable` 明确说明 DNS/socket peer、系统代理和 TLS 未验证。因此旧的长期 `verified` 不会把 Direct mock evidence 宣称为端到端 provider identity。
 - 缺证据：缺失或歧义 request ID 保持 `null`，经既有 S2 response validation 进入 `response_invalid → AMBIGUOUS/BLOCKED`，禁止自动重发。Codex CLI 不使用 generic event/item ID 或批准 model 补值；有 bound RouteBinding 时，因实际 endpoint/auth/header 不可独立观测而在 spawn 前失败关闭。
 - 边界：S5 全部证据来自 injected mock fetch、synthetic credential 和 synthetic repo；不修改 S1 schema/S2 attempt schema，不生成 S6 EvidenceBundle，不证明真实 API、DNS peer、proxy/TLS 或 production readiness。
+
+## ADR-018：S6 使用只读冻结证据与 EvidenceBundle v2
+
+- 日期：2026-08-23
+- 状态：接受
+- 决策：Local Quality Gate 只执行批准 policy 中的固定 executable/argv；按 base、scope、forbidden path、secret、diff、命令和最终 freeze 的确定顺序运行。Git 冻结只读取 index/status/diff，不调用 `write-tree` 或写共享 object store。
+- 文件边界：snapshot 在读取前验证 lexical 与 physical containment，拒绝 symlink/junction/reparse 越界及敏感路径；tracked/untracked 内容以物理文件身份和 hash 绑定，ignored 项只枚举路径并失败关闭、不读取内容。artifact 采用外置、run-owned、content-addressed 引用，并在报告消费和 bundle 持久化前后复核；final snapshot 会在写 artifact 前重新派生 forbidden/reparse/ignored 状态。
+- secret/diff：baseline finding 按规则与指纹多重集比较；未变化的既有 finding 允许生成已脱敏但可审查 diff，新增或重复增加失败关闭。大小上限按 raw bytes 在脱敏前执行，输出只保存 bounded/redacted diagnostics。
+- 完整性：QualityGateReport 完整绑定 request/base/plan/approval/isolation/worktree/policy/command set 与 pre/post snapshot，并带自校验 hash；consumer 必须验证 gate 顺序、pass 等式、artifact 和当前 worktree。EvidenceBundle 因增加这些必需摘要及 nullable usage，从 S1 合成 v1 显式升级为 v2，不静默接受旧 v1。
+- 边界：质量命令仍是受信项目进程，不是 OS sandbox；secret scan 是启发式；bundle 由 legacy bridge 投影，S7 full contract core 尚未接入。全部证据为 synthetic/mock 离线测试，不证明真实 API、provider identity 或 production readiness。

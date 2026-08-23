@@ -97,3 +97,7 @@ S1 的检查是合同入口保护，不替代 S4 的文件系统/reparse/symlink
 - 不调用真实 API 或运行付费 benchmark。
 
 这些能力分别属于 S2–S7；S1 只确保它们将来共享同一组严格、可哈希的数据边界。
+
+## S6 合同演进说明
+
+S1 的 EvidenceBundle v1 是未接执行链的合成 schema 基线。S6 为了强制绑定 QualityGateReport、attempt/route 摘要、测试诊断、scope/privacy/secret 结果和 nullable usage，将线协议显式升级为 v2，并同步运行时解析器、JSON Schema 与合成示例。v1 不被静默解释成 v2；这项兼容性决策见 ADR-018，完整实现证据见 `docs/23-s6-quality-evidence.md`。

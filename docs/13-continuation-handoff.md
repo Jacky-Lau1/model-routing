@@ -1,4 +1,4 @@
-# 13｜继续研发交接（S5 更新，2026-08-21）
+# 13｜继续研发交接（S6 更新，2026-08-23）
 
 > 本文是历史实现到 Orchestrator-first 的迁移交接。当前阶段基线见 `docs/16-orchestrator-first-implementation-plan.md`，逐阶段入口见 `docs/17-orchestrator-first-stage-handoffs.md`。
 
@@ -9,7 +9,7 @@
 - 默认安装器不再创建 native DeepSeek、OpenAI Codex 或 Restore OpenAI 快捷方式。
 - native provider switch 与 profile 安装脚本已移到 `scripts/deprecated-experimental/native-codex/`，仅供协议兼容性考古，不受支持、不执行。
 - `route live-benchmark` 仍是显式命令；安装、默认检查和 S0-S9 测试不得触发。
-- 历史 S0 交接时，TypeScript Orchestrator 主体仍是整改前 Phase 0/1。当前 S1–S5 已完成；S6–S9 的 quality bundle、GPT 前台、apply 与 E2E 尚未完成，现状以 `docs/16`、`docs/17` 和 `docs/22` 为准。
+- 历史 S0 交接时，TypeScript Orchestrator 主体仍是整改前 Phase 0/1。当前 S1–S6 已完成；S7–S9 的 GPT 前台、apply 与 E2E 尚未开始，现状以 `docs/16`、`docs/17` 和 `docs/23` 为准。
 
 ## S0 的默认入口
 
@@ -36,7 +36,7 @@ deprecated experimental 目录中的脚本可能下载外部内容、写 Codex p
 
 ## 历史下一阶段
 
-本节保留 S0 完成时的交接语义：当时下一阶段是 S1，且只实施 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和 privacy/policy schema 基线。当前 S1–S5 已完成，下一阶段为 S6；不得再使用本节作为当前启动指令。
+本节保留 S0 完成时的交接语义：当时下一阶段是 S1，且只实施 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和 privacy/policy schema 基线。当前 S1–S6 已完成，下一阶段为 S7；不得再使用本节作为当前启动指令。
 
 ## 先读哪些文件
 
@@ -46,11 +46,17 @@ deprecated experimental 目录中的脚本可能下载外部内容、写 Codex p
 4. `docs/08-decisions.md`
 5. `README.md`、`ROADMAP.md`、`CHANGELOG.md`
 6. `logs/decision-log.md`、`logs/routing-validation-log.md`
-7. `docs/18-s1-data-contracts.md`、`docs/19-s2-attempt-persistence.md`、`docs/20-s3-isolated-worktree.md`、`docs/21-s4-safe-executor.md`、`docs/22-s5-route-preflight.md`
-8. S6 涉及的 quality gate、secret scan、diff freeze 和 EvidenceBundle 源码/schema/mock 测试
+7. `docs/18-s1-data-contracts.md` 至 `docs/23-s6-quality-evidence.md`
+8. S7 涉及的 core service、CLI、STDIO MCP 与 thin skill 源码/schema/mock 测试
 
 ## S5 完成边界
 
 S5 把 canonical/legacy RouteBinding 深度冻结，并将 legacy plan、approval、request fingerprint 与 stable adapter ID、exact endpoint/auth/model/protocol/reasoning/budget/scope 绑定。Direct DeepSeek 在 durable `PREPARED` 内完成 local preflight、alias-specific synthetic credential resolution；逐轮 mock transport 先验证 exact response URL/status/model 和分别记录的 body/header ID，redirect 不跟随。缺失证据保持 `null` 并进入 `AMBIGUOUS/BLOCKED`。Codex CLI bound transport 因 endpoint/auth/header 不可观测而 spawn 前停止。
 
 该结论只证明 injected mock fetch 下的 observable route tuple；DNS peer、系统代理/TLS 和真实 provider identity 未验证。S5 不生成 EvidenceBundle，不得在 S6 前把 runtime RouteEvidence 当成最终质量/审计 bundle。TypeScript `--noEmit` 与 Vitest 17/17 files、279/279 tests 通过。
+
+## S6 完成边界
+
+S6 用固定 policy command catalog 顺序执行 local gates；snapshot 先验证物理 containment，secret baseline 用多重集比较，raw diff 在脱敏前执行 ceiling，Git 只读取 index/status/diff。QualityGateReport 完整绑定批准请求、pre/post snapshot、artifact 和 gate 顺序并带 self hash；EvidenceBundle v2 记录 attempts、route evidence、测试诊断、nullable usage、分层 cost 与剩余风险。
+
+TypeScript、S6 定向 7/7 files 118/118 tests、全量 19/19 files 323/323 tests 通过。全部为 synthetic repo/mock provider/credential；未读取真实配置/auth/DPAPI/credential-bearing env 值（最终文档审计仅有一次非敏感 `USERPROFILE` locator 意外展开，详见 `docs/23`），未运行真实 API、live benchmark 或费用操作。受信质量命令不是 OS sandbox，legacy bridge 和启发式 secret scan 仍作为风险保留；S7 尚未开始。

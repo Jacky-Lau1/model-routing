@@ -166,7 +166,7 @@ export interface AttemptRecord {
 }
 
 export interface EvidenceBundle {
-  version: 1;
+  version: 2;
   bundle_id: string;
   run_id: string;
   task_id: string;
@@ -175,12 +175,20 @@ export interface EvidenceBundle {
   route_binding_hash: string;
   policy_hash: string;
   quality_policy_hash: string;
+  quality_policy: QualityGatePolicy;
   approval_hash: string;
   execution_context_hash: string;
   isolation_hash: string;
   worktree_id: string;
   base_commit: string;
   worktree_head: string;
+  quality_request_hash: string;
+  quality_report_hash: string;
+  quality_passed: boolean;
+  quality_write_scope: string[];
+  quality_command_ids: QualityCommandId[];
+  post_artifact_snapshot_hash: string;
+  worktree_snapshot_hash: string;
   attempt_ids: string[];
   route_evidence_ids: string[];
   attempt_summaries: Array<{ attempt_id: string; stage: Stage; status: AttemptStatus; failure_class: FailureClass }>;
@@ -190,11 +198,11 @@ export interface EvidenceBundle {
   diff_hash: string;
   diff_reference: string;
   quality_gate_results: Array<{ gate_id: string; outcome: "passed" | "failed" | "not_applicable" | "not_run"; evidence_hash: string; summary: string }>;
-  tests_run: Array<{ command_id: string; exit_code: number; output_hash: string }>;
+  tests_run: Array<{ command_id: string; exit_code: number; output_hash: string; output_summary: string; timed_out: boolean; output_overflowed: boolean; worktree_mutated: boolean }>;
   scope_violations: string[];
   privacy_violations: string[];
   secret_scan_summary: { outcome: "passed" | "failed" | "not_run"; findings: number; baseline_findings: number; new_findings: number };
-  usage_metrics: { input_tokens: number; output_tokens: number; reasoning_tokens: number };
+  usage_metrics: { input_tokens: number | null; output_tokens: number | null; reasoning_tokens: number | null };
   cost_metrics: { provider_reported_usd: number | null; estimated_list_usd: number | null; invoice_usd: number | null; chatgpt_quota: number | null };
   wall_clock_time_ms: number;
   repair_count: number;
@@ -213,6 +221,7 @@ export interface QualityGatePolicy {
   max_diff_bytes: number;
   max_file_bytes: number;
   max_output_bytes: number;
+  max_wall_time_ms: number;
   policy_hash: string;
 }
 
@@ -235,14 +244,28 @@ export interface QualityGateRequest {
   command_ids: QualityCommandId[];
   policy_hash: string;
   effective_policy_hash: string;
+  max_wall_time_ms: number;
 }
 
 export interface QualityGateReport {
   version: 1;
+  run_id: string;
+  task_id: string;
+  base_commit: string;
+  plan_hash: string;
+  approval_hash: string;
+  isolation_hash: string;
+  worktree_id: string;
+  policy_hash: string;
+  effective_policy_hash: string;
+  max_wall_time_ms: number;
+  request_hash: string;
   passed: boolean;
   worktree_head: string;
   files_changed: string[];
   content_snapshot_hash: string;
+  post_artifact_snapshot_hash: string;
+  worktree_snapshot_hash: string;
   diff_hash: string;
   diff_reference: string;
   quality_gate_results: EvidenceBundle["quality_gate_results"];
@@ -252,6 +275,7 @@ export interface QualityGateReport {
   secret_scan_summary: EvidenceBundle["secret_scan_summary"];
   wall_clock_time_ms: number;
   redaction_notes: string[];
+  report_hash: string;
 }
 
 export interface UserPolicy {
@@ -416,6 +440,12 @@ export interface UsageMetrics extends CacheMetrics {
   reasoningTokens: number;
 }
 
+export interface UsageAvailability {
+  inputTokens: boolean;
+  outputTokens: boolean;
+  reasoningTokens: boolean;
+}
+
 export type RequestIdSource = "body" | "header" | "body_and_header" | "cli_event" | "local" | "not_available";
 
 export interface RouteTransportObservation {
@@ -488,6 +518,7 @@ export interface RunState {
   routeEvidence?: RouteEvidence[];
   usage?: UsageMetrics;
   normalizedEquivalentUsd?: number;
+  usageAvailability?: UsageAvailability;
   evidenceBundleHash?: string;
   evidenceBundleReference?: string;
 }
@@ -513,6 +544,7 @@ export interface ProviderResponse {
   provider: string;
   model: string;
   usage: UsageMetrics;
+  usageAvailability?: UsageAvailability;
   routeEvidence?: ProviderRouteEvidence;
   structuredPatches?: StructuredPatchProposal[];
   raw?: unknown;

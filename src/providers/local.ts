@@ -28,9 +28,15 @@ export class LocalValidationAdapter implements ProviderAdapter {
   async invoke(request: ProviderRequest): Promise<ProviderResponse> {
     if (!request.qualityGate || !request.workingDirectory) throw new Error("Local validation requires an approved structured quality-gate request");
     const report = await this.gate.run(request.qualityGate, request.workingDirectory);
+    const requestId = `local-${request.qualityGate.run_id}-${report.report_hash.slice(0, 16)}`;
     return {
-      text: JSON.stringify(report), requestId: `local-${report.diff_hash.slice(0, 24)}`, provider: "local", model: "local-quality-gates",
+      text: JSON.stringify(report), requestId, provider: "local", model: "local-quality-gates", usageAvailability: { inputTokens: true, outputTokens: true, reasoningTokens: true },
       usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 },
+      routeEvidence: {
+        routeBindingHash: null, adapterId: this.adapterId, expectedProvider: "local", expectedModel: "local-quality-gates", expectedOrigin: null, expectedPath: null,
+        actualOrigin: null, actualPath: null, actualModel: "local-quality-gates", wireProtocol: "local", authAlias: null, requestId, requestIds: [requestId], bodyResponseIds: [null], headerRequestIds: [null],
+        requestIdSource: "local", redirectPolicy: "local", redirected: false, routeTupleVerified: true, evidenceComplete: true, unverifiedReasons: [], verificationStatus: "local", observations: [], peerVerification: "local", proxyVerification: "local",
+      },
     };
   }
 }

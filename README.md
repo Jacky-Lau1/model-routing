@@ -2,7 +2,7 @@
 
 > 面向 Codex Desktop 的“强模型规划与验收 + 低成本模型受控执行”方案档案库。
 
-**状态：Orchestrator-first S0–S5 已完成；S6–S9 尚未实施。** 默认入口只暴露 Orchestrator；S1–S4 已冻结合同、durable attempt、isolated worktree 和 Direct DeepSeek 最小文件 capability。S5 又把 legacy execution plan、approval 和 request fingerprint 绑定到深度冻结的 RouteBinding；Direct DeepSeek 只接受固定 origin/path、model family、protocol、auth alias、budget 与 scope，在 S2 `PREPARED` 边界完成本地 preflight 和一次 alias-specific synthetic credential resolution。mock transport 明确拒绝 redirect，并在每个工具轮次先核对 `Response.url`、model 和分别记录的 body response ID/header request ID；缺失或歧义证据保持 `null`，进入 `response_invalid → AMBIGUOUS/BLOCKED`，不自动重发。TypeScript 与 17/17 files、279/279 项离线测试通过。Codex CLI 的 bound transport 因 endpoint/auth/header 不可独立观测而在 spawn 前失败；DNS peer、系统代理/TLS、S6 完整质量门、GPT 前台和 OS sandbox 仍待后续阶段。未运行真实 API，不构成真实路由或生产可用声明。
+**状态：Orchestrator-first S0–S6 已完成离线阶段门；S7–S9 尚未开始。** S6 已接入批准命令目录、顺序化本地质量门、物理路径/范围冻结、baseline-aware secret scan、raw diff ceiling、content-addressed diff artifact、可自校验且绑定请求的 QualityGateReport，以及 EvidenceBundle v2。不可得 usage 保持 `null`，与真实 `0` 分开。TypeScript、S6 定向 7/7 files 118/118 tests 和全量 19/19 files 323/323 tests 通过；全部为 mock/synthetic 离线证据。Codex CLI bound transport、DNS peer、系统代理/TLS、GPT 前台、OS sandbox 和真实 provider route 仍未验证。未读取真实配置/认证/密钥，未运行真实 API 或费用测试，不构成 production readiness 声明。
 
 ## 目标
 
@@ -35,6 +35,7 @@
 - [S3 Isolated Git Worktree、生命周期与冲突检测](docs/20-s3-isolated-worktree.md)
 - [S4 Direct DeepSeek Safe Executor 与 Capability Boundary](docs/21-s4-safe-executor.md)
 - [S5 Immutable RouteBinding、Endpoint Preflight 与 RouteEvidence](docs/22-s5-route-preflight.md)
+- [S6 Local Quality Gate 与 EvidenceBundle](docs/23-s6-quality-evidence.md)
 
 ## 当前入口与运行警告
 
@@ -54,12 +55,13 @@
 8. LLM 调用状态不明时进入 `AMBIGUOUS/BLOCKED`，不自动重发可能计费的请求。
 9. 新跨组件对象必须通过 S1 严格 schema 与规范化哈希；legacy `allowedFiles` 仅由已批准 `writeFiles` 派生用于兼容/post-hoc 检查，不能授权读取或 Direct Adapter 写入。
 10. S5 的 Direct route evidence 来自 injected mock fetch 与批准 tuple 的逐轮比对，只证明本地失败关闭逻辑；`Response.url` 不证明 DNS/socket peer、系统代理或 TLS。Codex CLI bound transport 在这些字段不可观测时发送前停止。
+11. S6 的质量命令仍是受信项目进程，不是 OS sandbox；完整 diff 仅存外置归属目录，长期 bundle 只保存 hash、统计和受控引用。
 
 ## 继续实施
 
-实施已拆成一个阶段一个新对话。S0–S5 阶段门通过后，下一阶段是 S6 Local Quality Gate 与 EvidenceBundle。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。
+实施已拆成一个阶段一个新对话。S0–S6 阶段门已通过；S7 GPT 前台 CLI/MCP/Skill 具备开始条件，但尚未开始。优先使用 [分阶段新对话交接](docs/17-orchestrator-first-stage-handoffs.md) 中对应 Prompt，并以 [最终实施计划](docs/16-orchestrator-first-implementation-plan.md) 的阶段门为准。
 
-> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S6。先确认 S5 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/18、docs/19、docs/20、docs/21、docs/22、docs/08 和最新 logs。
+> 继续 `Jacky-Lau1/model-routing`，只实施 `docs/16-orchestrator-first-implementation-plan.md` 的 S7。先确认 S6 阶段门仍通过，再读 docs/14、docs/16、docs/17、docs/18–docs/23、docs/08 和最新 logs。
 
 在 GitHub 网页链接可用后，也可以直接提供仓库 URL。任何实施前都应重新核验上游 Codex 文档、模型价格、提供商 API 兼容性与当前版本限制。
 

@@ -13,6 +13,25 @@
 | 2026-08-21 | S4 Direct DeepSeek capability boundary | DeepSeek Direct Adapter（mock fetch；synthetic model response） | `codex/s4-safe-executor` working tree | 不适用；只验证本地 manifest/tool/patch/env capability，不发 API，不构成真实路由证据 | TypeScript `--noEmit`；Vitest 15/15 files、169/169 | 通过 | traversal/UNC/device/ADS/case/`?`、real junction、`.git`/secret path+content、scope/classification/hash/size/encoding、single patch/preimage、proposal-final reset、tool/byte budget、private text fetch=0、credential child env/absolute executable、AMBIGUOUS/no-retry/main unchanged 通过；未读取真实 config/auth/DPAPI/env 值，未运行 API/benchmark；S5 route identity 未验证 |
 | 2026-08-21 | S5 immutable RouteBinding 与 route preflight | Direct DeepSeek injected mock fetch；Codex CLI bound preflight | `codex/s5-route-preflight` working tree | approved binding/hash + stable adapter ID + exact injected target/Response.url/status/model + 分源 body/header ID 的逐轮 mock evidence；`route_tuple_verified_peer_unobserved`，不构成真实 provider/peer 证据 | TypeScript `--noEmit`；S5 定向 7/7 files、160/160；全量 17/17 files、279/279 | 通过 | 11类hash-valid mismatch durable FAILED_BEFORE_SEND/resolver0/fetch0；HTTP/userinfo/host/port/path/cross-provider、301/302/303/307/308 relative/same/cross redirect、wrong/missing URL/model/ID、多轮失败、approval全字段、registry adapter ID、credential valid-once、fake evidence、missing-ID AMBIGUOUS/no-resend、Codex no-fallback 通过。Codex bound transport、DNS peer、proxy/TLS不可观测；未读真实 config/auth/DPAPI/env 值，未调用 API/benchmark |
 | 2026-08-23 | S6 恢复与 WIP 安全 checkpoint | Local Quality Gate / EvidenceBundle（离线 WIP） | `codex/s6-quality-evidence` @ `4f20d6b` + 19-file WIP | 只读核对指定文档、日志、源码和 WIP diff；未发 API，不构成真实路由证据 | checkpoint 前未运行最终 typecheck/Vitest | WIP / BLOCKED | 已确认 symlink snapshot 越界、命令诊断、baseline-secret diff、共享 object store 写入、raw diff limit、schema ceiling、production timeout/overflow、artifact race、report integrity、usage unavailable 等阻塞项；详见 `docs/23-s6-quality-evidence.md`。S6 绝非 PASS，S7–S9 未开始。 |
+| 2026-08-23 | S6 Local Quality Gate 与 EvidenceBundle v2 | Local validation / EvidenceBundle（synthetic/mock） | `codex/s6-quality-evidence` completion checkpoint | Local route evidence 使用独立 `local` verification 语义；QualityGateReport 绑定请求、冻结快照、artifact 与 self hash；未发 API，不构成真实 provider route | TypeScript `--noEmit` exit 0；S6 定向 7/7 files、118/118 exit 0；全量 19/19 files、323/323 exit 0；diff/check/脱敏/用户产物审计 | 通过 | symlink physical containment、bounded/redacted diagnostics、baseline secret 可审查 diff、物理只读 Git、raw byte ceiling、schema 16/4/1 MiB 与 30 min、production timeout/overflow、wall budget、artifact mutation/final forbidden、report replay/tamper、usage null/zero 均通过。完整命令见本表后的 S6 command evidence；全部为 synthetic repo/mock provider/credential；未读真实 config/auth/DPAPI/credential-bearing env 值；最终文档审计的一次非敏感 `USERPROFILE` locator 意外展开见 `docs/23`。未调用 API/benchmark；S7 尚未开始。 |
+
+### S6 command evidence（2026-08-23）
+
+以下保留完整 argv；bundled Node 的用户目录前缀按脱敏政策记为 `<codex-bundled-node.exe>`，没有通过环境变量解析或把用户绝对路径写入日志。
+
+```powershell
+& '<codex-bundled-node.exe>' 'node_modules\typescript\bin\tsc' --noEmit
+# exit 0
+
+& '<codex-bundled-node.exe>' 'node_modules\vitest\vitest.mjs' run --configLoader runner --no-cache test/quality-gate.test.ts test/local.test.ts test/orchestrator.test.ts test/contracts.test.ts test/schema-contracts.test.ts test/scope-guard.test.ts test/policy.test.ts
+# exit 0; Test Files 7 passed (7); Tests 118 passed (118)
+
+& '<codex-bundled-node.exe>' 'node_modules\vitest\vitest.mjs' run --configLoader runner --no-cache
+# exit 0; Test Files 19 passed (19); Tests 323 passed (323)
+
+git diff --check
+# exit 0
+```
 
 ## 记录规则
 

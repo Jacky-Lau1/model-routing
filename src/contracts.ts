@@ -1,4 +1,5 @@
 import { canonicalSerialize, hashesEqual, stableHash } from "./canonical.js";
+import { isForbiddenQualityPath } from "./scope-guard.js";
 import type {
   ApprovalRecord,
   AttemptRecord,
@@ -214,8 +215,10 @@ export function assertAttemptRecord(value: unknown): asserts value is AttemptRec
 }
 
 export function createEvidenceBundle(input: EvidenceBundleInput): EvidenceBundle {
+  const qualityPolicyCommandIds = [...input.quality_policy.command_ids]; Object.freeze(qualityPolicyCommandIds);
   const body: EvidenceBundleInput = {
     ...input,
+    quality_policy: Object.freeze({ ...input.quality_policy, command_ids: qualityPolicyCommandIds }),
     attempt_ids: [...input.attempt_ids], route_evidence_ids: [...input.route_evidence_ids], attempt_summaries: input.attempt_summaries.map(item => Object.freeze({ ...item })), route_evidence_summaries: input.route_evidence_summaries.map(item => Object.freeze({ ...item })), files_changed: [...input.files_changed],
     quality_gate_results: input.quality_gate_results.map(item => Object.freeze({ ...item })),
     tests_run: input.tests_run.map(item => Object.freeze({ ...item })),
@@ -236,16 +239,29 @@ export function hashEvidenceBundle(value: EvidenceBundle): string {
 
 export function assertEvidenceBundle(value: unknown): asserts value is EvidenceBundle {
   const object = exactObject(value, "EvidenceBundle", [
-    "version", "bundle_id", "run_id", "task_id", "contract_provenance", "task_package_hash", "route_binding_hash", "policy_hash", "quality_policy_hash", "approval_hash", "execution_context_hash", "isolation_hash", "worktree_id", "base_commit", "worktree_head",
+    "version", "bundle_id", "run_id", "task_id", "contract_provenance", "task_package_hash", "route_binding_hash", "policy_hash", "quality_policy_hash", "quality_policy", "approval_hash", "execution_context_hash", "isolation_hash", "worktree_id", "base_commit", "worktree_head", "quality_request_hash", "quality_report_hash", "quality_passed", "quality_write_scope", "quality_command_ids", "post_artifact_snapshot_hash", "worktree_snapshot_hash",
     "attempt_ids", "route_evidence_ids", "attempt_summaries", "route_evidence_summaries", "files_changed", "diff_hash", "diff_reference", "quality_gate_results", "tests_run",
     "content_snapshot_hash", "scope_violations", "privacy_violations", "secret_scan_summary", "usage_metrics", "cost_metrics", "wall_clock_time_ms", "repair_count",
     "remaining_risks", "redaction_notes", "bundle_hash",
   ]);
-  literal(object.version, 1, "EvidenceBundle.version");
+  literal(object.version, 2, "EvidenceBundle.version");
   identifier(object.bundle_id, "EvidenceBundle.bundle_id"); identifier(object.run_id, "EvidenceBundle.run_id"); identifier(object.task_id, "EvidenceBundle.task_id");
   oneOf(object.contract_provenance, ["canonical", "legacy_bridge"], "EvidenceBundle.contract_provenance");
   hash(object.task_package_hash, "EvidenceBundle.task_package_hash"); hash(object.route_binding_hash, "EvidenceBundle.route_binding_hash"); hash(object.policy_hash, "EvidenceBundle.policy_hash"); hash(object.quality_policy_hash, "EvidenceBundle.quality_policy_hash"); hash(object.approval_hash, "EvidenceBundle.approval_hash"); hash(object.execution_context_hash, "EvidenceBundle.execution_context_hash"); hash(object.isolation_hash, "EvidenceBundle.isolation_hash"); identifier(object.worktree_id, "EvidenceBundle.worktree_id");
+  const qualityPolicy = exactObject(object.quality_policy, "EvidenceBundle.quality_policy", ["version", "policy_id", "command_ids", "command_registry_hash", "max_diff_bytes", "max_file_bytes", "max_output_bytes", "max_wall_time_ms", "policy_hash"]);
+  literal(qualityPolicy.version, 1, "EvidenceBundle.quality_policy.version"); identifier(qualityPolicy.policy_id, "EvidenceBundle.quality_policy.policy_id"); stringArray(qualityPolicy.command_ids, "EvidenceBundle.quality_policy.command_ids", false, false); hash(qualityPolicy.command_registry_hash, "EvidenceBundle.quality_policy.command_registry_hash"); hash(qualityPolicy.policy_hash, "EvidenceBundle.quality_policy.policy_hash");
+  for (const [field, ceiling] of [["max_diff_bytes", 16 * 1024 * 1024], ["max_file_bytes", 4 * 1024 * 1024], ["max_output_bytes", 1024 * 1024], ["max_wall_time_ms", 30 * 60_000]] as const) { integer(qualityPolicy[field], `EvidenceBundle.quality_policy.${field}`, 1); if ((qualityPolicy[field] as number) > ceiling) throw new Error(`EvidenceBundle.quality_policy.${field} exceeds runtime ceiling`); }
+  const { policy_hash: _qualityPolicyHash, ...qualityPolicyBody } = qualityPolicy;
+  if (!hashesEqual(object.quality_policy_hash as string, qualityPolicy.policy_hash as string) || !hashesEqual(qualityPolicy.policy_hash as string, stableHash(qualityPolicyBody))) throw new Error("EvidenceBundle quality policy hash does not match its policy projection");
   commit(object.base_commit, "EvidenceBundle.base_commit"); commit(object.worktree_head, "EvidenceBundle.worktree_head");
+  hash(object.quality_request_hash, "EvidenceBundle.quality_request_hash"); hash(object.quality_report_hash, "EvidenceBundle.quality_report_hash");
+  if (typeof object.quality_passed !== "boolean") throw new Error("EvidenceBundle.quality_passed must be boolean");
+  assertPathScope(object.quality_write_scope as string[], "EvidenceBundle.quality_write_scope");
+  stringArray(object.quality_command_ids, "EvidenceBundle.quality_command_ids", false, false);
+  const commandOrder = ["format_check", "lint", "typecheck", "unit_tests", "build", "project_acceptance"];
+  if ((object.quality_command_ids as string[]).some(id => !commandOrder.includes(id)) || new Set(object.quality_command_ids as string[]).size !== (object.quality_command_ids as string[]).length || [...(object.quality_command_ids as string[])].sort((a, b) => commandOrder.indexOf(a) - commandOrder.indexOf(b)).join("\0") !== (object.quality_command_ids as string[]).join("\0")) throw new Error("EvidenceBundle.quality_command_ids are invalid");
+  if ((qualityPolicy.command_ids as string[]).join("\0") !== (object.quality_command_ids as string[]).join("\0")) throw new Error("EvidenceBundle quality policy commands do not match quality command IDs");
+  hash(object.post_artifact_snapshot_hash, "EvidenceBundle.post_artifact_snapshot_hash"); hash(object.worktree_snapshot_hash, "EvidenceBundle.worktree_snapshot_hash");
   stringArray(object.attempt_ids, "EvidenceBundle.attempt_ids", false, false); stringArray(object.route_evidence_ids, "EvidenceBundle.route_evidence_ids", false, false);
   (object.attempt_ids as unknown[]).forEach((entry, index) => identifier(entry, `EvidenceBundle.attempt_ids[${index}]`));
   (object.route_evidence_ids as unknown[]).forEach((entry, index) => identifier(entry, `EvidenceBundle.route_evidence_ids[${index}]`));
@@ -261,15 +277,16 @@ export function assertEvidenceBundle(value: unknown): asserts value is EvidenceB
     identifier(gate.gate_id, `${index}.gate_id`); oneOf(gate.outcome, ["passed", "failed", "not_applicable", "not_run"], `${index}.outcome`); hash(gate.evidence_hash, `${index}.evidence_hash`); safeText(gate.summary, `${index}.summary`);
   });
   object.tests_run.forEach((entry, index) => {
-    const test = exactObject(entry, `EvidenceBundle.tests_run[${index}]`, ["command_id", "exit_code", "output_hash"]);
-    identifier(test.command_id, `${index}.command_id`); if (!Number.isInteger(test.exit_code)) throw new Error(`${index}.exit_code must be an integer`); hash(test.output_hash, `${index}.output_hash`);
+    const test = exactObject(entry, `EvidenceBundle.tests_run[${index}]`, ["command_id", "exit_code", "output_hash", "output_summary", "timed_out", "output_overflowed", "worktree_mutated"]);
+    identifier(test.command_id, `${index}.command_id`); if (!Number.isInteger(test.exit_code)) throw new Error(`${index}.exit_code must be an integer`); hash(test.output_hash, `${index}.output_hash`); safeText(test.output_summary, `${index}.output_summary`);
+    if (typeof test.timed_out !== "boolean" || typeof test.output_overflowed !== "boolean" || typeof test.worktree_mutated !== "boolean") throw new Error(`${index}.command diagnostics must use booleans`);
   });
   stringArray(object.scope_violations, "EvidenceBundle.scope_violations", false, true); stringArray(object.privacy_violations, "EvidenceBundle.privacy_violations", false, true);
   stringArray(object.remaining_risks, "EvidenceBundle.remaining_risks", false, true); stringArray(object.redaction_notes, "EvidenceBundle.redaction_notes", false, true);
   const secret = exactObject(object.secret_scan_summary, "EvidenceBundle.secret_scan_summary", ["outcome", "findings", "baseline_findings", "new_findings"]);
   oneOf(secret.outcome, ["passed", "failed", "not_run"], "EvidenceBundle.secret_scan_summary.outcome"); integer(secret.findings, "EvidenceBundle.secret_scan_summary.findings", 0); integer(secret.baseline_findings, "EvidenceBundle.secret_scan_summary.baseline_findings", 0); integer(secret.new_findings, "EvidenceBundle.secret_scan_summary.new_findings", 0);
   const usage = exactObject(object.usage_metrics, "EvidenceBundle.usage_metrics", ["input_tokens", "output_tokens", "reasoning_tokens"]);
-  integer(usage.input_tokens, "EvidenceBundle.usage_metrics.input_tokens", 0); integer(usage.output_tokens, "EvidenceBundle.usage_metrics.output_tokens", 0); integer(usage.reasoning_tokens, "EvidenceBundle.usage_metrics.reasoning_tokens", 0);
+  for (const field of ["input_tokens", "output_tokens", "reasoning_tokens"] as const) if (usage[field] !== null) integer(usage[field], `EvidenceBundle.usage_metrics.${field}`, 0);
   const cost = exactObject(object.cost_metrics, "EvidenceBundle.cost_metrics", ["provider_reported_usd", "estimated_list_usd", "invoice_usd", "chatgpt_quota"]);
   for (const field of ["provider_reported_usd", "estimated_list_usd", "invoice_usd", "chatgpt_quota"] as const) if (cost[field] !== null) finiteNumber(cost[field], `EvidenceBundle.cost_metrics.${field}`, 0);
   integer(object.wall_clock_time_ms, "EvidenceBundle.wall_clock_time_ms", 0); integer(object.repair_count, "EvidenceBundle.repair_count", 0);
@@ -278,11 +295,66 @@ export function assertEvidenceBundle(value: unknown): asserts value is EvidenceB
   if ((object.route_evidence_summaries as Array<{ evidence_id: string }>).map(item => item.evidence_id).join("\0") !== (object.route_evidence_ids as string[]).join("\0")) throw new Error("EvidenceBundle route summaries do not match route evidence IDs");
   uniqueStrings(object.files_changed as string[], "EvidenceBundle.files_changed"); uniqueStrings((object.quality_gate_results as Array<{ gate_id: string }>).map(item => item.gate_id), "EvidenceBundle.quality_gate_results");
   if ([...(object.files_changed as string[])].sort().some((item, index) => item !== (object.files_changed as string[])[index])) throw new Error("EvidenceBundle.files_changed must be sorted");
+  assertBundleQualitySemantics(object as unknown as EvidenceBundle, commandOrder);
+  assertBundleQualityBindings(object as unknown as EvidenceBundle);
   hash(object.bundle_hash, "EvidenceBundle.bundle_hash");
   if (!hashesEqual(object.bundle_hash as string, hashEvidenceBundle(object as unknown as EvidenceBundle))) throw new Error("EvidenceBundle hash does not match canonical content");
 }
 
+function assertBundleQualityBindings(bundle: EvidenceBundle): void {
+  const request = { run_id: bundle.run_id, task_id: bundle.task_id, base_commit: bundle.base_commit, plan_hash: bundle.task_package_hash, approval_hash: bundle.approval_hash, isolation_hash: bundle.isolation_hash, worktree_id: bundle.worktree_id, write_scope: [...bundle.quality_write_scope], command_ids: [...bundle.quality_command_ids], policy_hash: bundle.quality_policy_hash, effective_policy_hash: bundle.policy_hash, max_wall_time_ms: bundle.quality_policy.max_wall_time_ms };
+  if (!hashesEqual(bundle.quality_request_hash, stableHash(request))) throw new Error("EvidenceBundle quality request hash does not match its request projection");
+  const report = { version: 1, run_id: bundle.run_id, task_id: bundle.task_id, base_commit: bundle.base_commit, plan_hash: bundle.task_package_hash, approval_hash: bundle.approval_hash, isolation_hash: bundle.isolation_hash, worktree_id: bundle.worktree_id, policy_hash: bundle.quality_policy_hash, effective_policy_hash: bundle.policy_hash, max_wall_time_ms: bundle.quality_policy.max_wall_time_ms, request_hash: bundle.quality_request_hash, passed: bundle.quality_passed, worktree_head: bundle.worktree_head, files_changed: bundle.files_changed, content_snapshot_hash: bundle.content_snapshot_hash, post_artifact_snapshot_hash: bundle.post_artifact_snapshot_hash, worktree_snapshot_hash: bundle.worktree_snapshot_hash, diff_hash: bundle.diff_hash, diff_reference: bundle.diff_reference, quality_gate_results: bundle.quality_gate_results, tests_run: bundle.tests_run, scope_violations: bundle.scope_violations, privacy_violations: bundle.privacy_violations, secret_scan_summary: bundle.secret_scan_summary, wall_clock_time_ms: bundle.wall_clock_time_ms, redaction_notes: bundle.redaction_notes };
+  if (!hashesEqual(bundle.quality_report_hash, stableHash(report))) throw new Error("EvidenceBundle quality report hash does not match its report projection");
+  if (bundle.worktree_head !== bundle.base_commit || !bundle.diff_reference.startsWith(`evidence/${bundle.run_id}/`)) throw new Error("EvidenceBundle worktree or artifact reference is not bound to the approved run");
+}
+
+function assertBundleQualitySemantics(bundle: EvidenceBundle, commandOrder: string[]): void {
+  const expected = ["base_identity", "preapply_scope", "changed_files_scope", "forbidden_paths", "secret_scan", "diff_sanity", ...commandOrder, "final_freeze", "evidence_artifact", "gate_budget"];
+  if (bundle.quality_gate_results.map(item => item.gate_id).join("\0") !== expected.join("\0")) throw new Error("EvidenceBundle quality gate sequence is incomplete or reordered");
+  const outcomes = new Map(bundle.quality_gate_results.map(item => [item.gate_id, item.outcome]));
+  for (const id of ["base_identity", "preapply_scope", "changed_files_scope", "forbidden_paths", "final_freeze", "evidence_artifact", "gate_budget"]) if (!["passed", "failed"].includes(outcomes.get(id)!)) throw new Error(`EvidenceBundle safety gate ${id} is invalid`);
+  const commandMutation = bundle.tests_run.some(item => item.worktree_mutated);
+  const earlyFailed = ["base_identity", "preapply_scope"].some(id => outcomes.get(id) === "failed") || (outcomes.get("forbidden_paths") === "failed" && !commandMutation);
+  for (const id of ["secret_scan", "diff_sanity"]) if (earlyFailed ? outcomes.get(id) !== "not_run" : !["passed", "failed"].includes(outcomes.get(id)!)) throw new Error(`EvidenceBundle ${id} state is invalid`);
+  if (outcomes.get("secret_scan") !== bundle.secret_scan_summary.outcome) throw new Error("EvidenceBundle secret gate contradicts the secret summary");
+  const expectedScopeViolations = bundle.files_changed.filter(item => !scopeAllows(item, bundle.quality_write_scope)).map(item => `outside_write_scope:${item}`);
+  const scopeGatesValid = expectedScopeViolations.length === 0 ? outcomes.get("preapply_scope") === "passed" && outcomes.get("changed_files_scope") === "passed" : outcomes.get("changed_files_scope") === "failed" && ["passed", "failed"].includes(outcomes.get("preapply_scope")!);
+  if (bundle.scope_violations.join("\0") !== expectedScopeViolations.join("\0") || !scopeGatesValid) throw new Error("EvidenceBundle scope gates contradict the approved write scope");
+  const expectedForbidden = bundle.files_changed.filter(isForbiddenQualityPath).map(item => `forbidden_path:${item}`); const reportedForbidden = bundle.privacy_violations.filter(item => item.startsWith("forbidden_path:"));
+  if (reportedForbidden.join("\0") !== expectedForbidden.join("\0")) throw new Error("EvidenceBundle forbidden-path evidence contradicts changed files");
+  const nonSecretPrivacy = bundle.privacy_violations.filter(item => !item.startsWith("new_high_confidence_secret_findings:"));
+  if ((nonSecretPrivacy.length === 0) !== (outcomes.get("forbidden_paths") === "passed")) throw new Error("EvidenceBundle forbidden-path gate contradicts privacy violations");
+  let priorFailure = earlyFailed || outcomes.get("secret_scan") === "failed" || outcomes.get("diff_sanity") === "failed";
+  let budgetStoppedCommand = false; let budgetScanFailed = priorFailure;
+  for (const id of commandOrder) {
+    if (!bundle.quality_command_ids.includes(id as EvidenceBundle["quality_command_ids"][number]) || budgetScanFailed) continue;
+    const outcome = outcomes.get(id)!;
+    if (outcome === "not_run") { budgetStoppedCommand = true; budgetScanFailed = true; }
+    else if (outcome === "failed") budgetScanFailed = true;
+  }
+  const observed = new Set(bundle.tests_run.map(item => item.command_id));
+  for (const id of commandOrder) {
+    const outcome = outcomes.get(id)!; const test = bundle.tests_run.find(item => item.command_id === id);
+    if (!bundle.quality_command_ids.includes(id as EvidenceBundle["quality_command_ids"][number])) { if (outcome !== "not_applicable" || test) throw new Error(`EvidenceBundle contains unapproved command evidence for ${id}`); }
+    else if (priorFailure || (budgetStoppedCommand && outcome === "not_run")) { if (outcome !== "not_run" || test) throw new Error(`EvidenceBundle command ${id} should be not-run`); priorFailure = true; }
+    else {
+      if (!["passed", "failed"].includes(outcome) || !test) throw new Error(`EvidenceBundle command evidence is incomplete for ${id}`);
+      if ((outcome === "passed") !== (test.exit_code === 0 && !test.timed_out && !test.output_overflowed && !test.worktree_mutated)) throw new Error(`EvidenceBundle command diagnostics contradict ${id}`);
+      if (outcome === "failed") priorFailure = true;
+    }
+    observed.delete(id);
+  }
+  if (observed.size) throw new Error("EvidenceBundle contains unknown command evidence");
+  const expectedBudgetOutcome = bundle.wall_clock_time_ms >= bundle.quality_policy.max_wall_time_ms || budgetStoppedCommand ? "failed" : "passed";
+  if (outcomes.get("gate_budget") !== expectedBudgetOutcome) throw new Error("EvidenceBundle gate_budget contradicts the approved wall-time limit");
+  if (outcomes.get("evidence_artifact") === "passed" && bundle.content_snapshot_hash !== bundle.post_artifact_snapshot_hash) throw new Error("EvidenceBundle artifact gate contradicts the post-artifact snapshot");
+  const derived = bundle.quality_gate_results.every(item => item.outcome === "passed" || item.outcome === "not_applicable") && bundle.scope_violations.length === 0 && bundle.privacy_violations.length === 0 && bundle.secret_scan_summary.outcome === "passed" && bundle.secret_scan_summary.new_findings === 0;
+  if (bundle.quality_passed !== derived) throw new Error("EvidenceBundle quality_passed contradicts quality evidence");
+}
+
 function uniqueStrings(values: string[], name: string): void { if (new Set(values).size !== values.length) throw new Error(`${name} must not contain duplicates`); }
+function scopeAllows(file: string, patterns: string[]): boolean { return patterns.some(pattern => { const normalized = pattern.replace(/\\/g, "/").replace(/^\.\//, ""); const escaped = normalized.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, "\u0000").replace(/\*/g, "[^/]*").replace(/\u0000/g, ".*"); return new RegExp(`^${escaped}$`).test(file); }); }
 
 export function assertRequestBudget(value: unknown, name = "RequestBudget"): asserts value is RequestBudget {
   const object = exactObject(value, name, ["max_input_tokens", "max_output_tokens", "max_tool_calls", "max_wall_time_ms", "max_estimated_cost_usd", "billing_mode"]);

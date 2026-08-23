@@ -82,6 +82,7 @@ async function run(executable: string, args: string[], input: string, env: NodeJ
 
 export function parseCodexJsonLines(output: string, request: ProviderRequest): ProviderResponse {
   let text = ""; let requestId: string | null = null; let actualModel: string | null = null;
+  const usageAvailability = { inputTokens: false, outputTokens: false, reasoningTokens: false };
   const usage: UsageMetrics = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 };
   for (const line of output.split(/\r?\n/).filter(Boolean)) {
     let event: any; try { event = JSON.parse(line); } catch { continue; }
@@ -91,9 +92,10 @@ export function parseCodexJsonLines(output: string, request: ProviderRequest): P
     if (event.type === "item.completed" && event.item?.type === "agent_message") text = event.item.text ?? text;
     if (event.type === "response.completed" || event.type === "turn.completed") {
       const source = event.response?.usage ?? event.usage ?? {};
-      usage.inputTokens = source.input_tokens ?? usage.inputTokens;
-      usage.outputTokens = source.output_tokens ?? usage.outputTokens;
-      usage.reasoningTokens = source.output_tokens_details?.reasoning_tokens ?? source.reasoning_tokens ?? usage.reasoningTokens;
+      if (Number.isFinite(source.input_tokens)) { usage.inputTokens = source.input_tokens; usageAvailability.inputTokens = true; }
+      if (Number.isFinite(source.output_tokens)) { usage.outputTokens = source.output_tokens; usageAvailability.outputTokens = true; }
+      const reasoning = source.output_tokens_details?.reasoning_tokens ?? source.reasoning_tokens;
+      if (Number.isFinite(reasoning)) { usage.reasoningTokens = reasoning; usageAvailability.reasoningTokens = true; }
       usage.cachedInputTokens = source.input_tokens_details?.cached_tokens ?? usage.cachedInputTokens;
       usage.cacheWriteTokens = source.input_tokens_details?.cache_write_tokens ?? usage.cacheWriteTokens;
       usage.cacheHitTokens = source.prompt_cache_hit_tokens ?? usage.cacheHitTokens;
@@ -101,7 +103,7 @@ export function parseCodexJsonLines(output: string, request: ProviderRequest): P
     }
   }
   if (!text) throw new Error("Provider returned no final agent message");
-  return { text, requestId, provider: request.route.provider, model: actualModel ?? "", usage };
+  return { text, requestId, provider: request.route.provider, model: actualModel ?? "", usage, usageAvailability };
 }
 
 function redact(value: string): string { return value.replace(/(?:sk-|Bearer\s+)[A-Za-z0-9._-]+/gi, "[REDACTED]").slice(-4_000); }

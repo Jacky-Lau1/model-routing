@@ -97,3 +97,14 @@
 - 验证：TypeScript `--noEmit`；S5 定向 7/7 files、160/160 tests；全量 17/17 files、279/279 tests。全部为 synthetic repo/credential/env、mock provider/fetch；未读真实 config/auth/DPAPI/env 值，未联网、未运行 API/benchmark。
 - 边界：DNS/socket peer、系统代理/TLS、真实供应商 header 合同、OS sandbox、S6 EvidenceBundle 均未验证/未实现。
 - 当前状态：S5 离线阶段门通过；S6 可开始。
+
+## 2026-08-23｜S6 只读质量冻结、完整报告与 EvidenceBundle v2
+
+- 恢复：从 `4f20d6b` + 19-file WIP 建立只读基线；先以 `afc3dbf` 创建并推送明确 WIP/BLOCKED checkpoint，不把中断前实现误记为通过。
+- scope/artifact：snapshot 先验证 physical containment 和文件 identity，拒绝 symlink/reparse 越界与敏感路径；artifact 外置、run-owned、content-addressed，并在 checkpoint、consumer 和 bundle freeze 边界复核。
+- Git/diff/secret：不再调用 `git write-tree`；只读 index/status/diff。raw diff 在脱敏前执行 byte ceiling。baseline finding 使用指纹多重集，未变化 finding 允许脱敏 review diff，新增或重复增加失败关闭。
+- command/report：只运行批准 fixed argv catalog；输出保存 bounded/redacted summary、timeout、overflow。QualityGateReport 完整绑定 request/base/plan/approval/isolation/worktree/policy、pre/post snapshot、artifact、gate 顺序及 self hash，拒绝重放或字段替换。
+- bundle：S1 合成 EvidenceBundle v1 显式升级为 v2，增加 attempt/route/gate/test 摘要和 nullable usage；不可得为 `null`，真实零为 `0`。当前 provenance 仍为 `legacy_bridge`。
+- 验证：TypeScript `--noEmit`；S6 定向 7/7 files、118/118 tests；全量 19/19 files、323/323 tests；`git diff --check`、脱敏、范围和用户产物检查通过。全部为 synthetic/mock 离线证据。
+- 边界：trusted project command 不是 OS sandbox；secret scan 是启发式；artifact identity 校验不替代 handle-relative sandbox；真实 API/provider route/DNS peer/proxy/TLS/usage/cost 未验证。
+- 当前状态：S6 离线阶段门通过；S7 尚未开始。

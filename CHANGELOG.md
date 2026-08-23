@@ -6,6 +6,10 @@
 
 ### Added
 
+- S6 固定命令目录与顺序化 Local Quality Gate：物理 scope/forbidden path、baseline-aware secret scan、raw diff sanity、check-only 命令和最终 freeze。
+- 外置 content-addressed diff artifact、完整 request-bound/self-hashed QualityGateReport，以及带 attempt/route/gate/usage/cost/risk 摘要的 EvidenceBundle v2。
+- S6 synthetic 攻击与生产 runner 回归，覆盖 symlink 越界、Git index flags/lazy-fetch、baseline secret、raw-size redaction bypass、artifact mutation/oversize/final forbidden refresh、report replay/tamper、总 wall budget、production timeout/overflow 进程树终止和 usage unavailable。
+- S6 专项证据文档 `docs/23-s6-quality-evidence.md`。
 - S5 canonical/legacy RouteBinding 深度 clone/freeze 与 exact cross-field preflight，固定 provider、adapter ID、model family、origin/path、protocol、auth alias、reasoning、budget 和 capability scopes。
 - Direct DeepSeek 逐轮 transport observation：分别记录 body response ID 与 allowlisted header request ID，核对 exact response URL/model/status，manual redirect 一律拒绝；observable route tuple 与不可观测 DNS peer/proxy 明确分层。
 - S5 synthetic/mock 攻击矩阵与专项交接文档 `docs/22-s5-route-preflight.md`，覆盖 tuple、endpoint/path、redirect、request-ID、多轮工具、approval、registry 和 Codex CLI 证据负例。
@@ -43,6 +47,9 @@
 
 ### Changed
 
+- 质量门 Git 证据改为只读 `git ls-files --stage -z`，不再使用会写共享 object store 的 `git write-tree`；raw diff 在脱敏前执行 byte ceiling。
+- 命令证据增加 bounded/redacted diagnostics 与 timeout/overflow 标记；未变化的 baseline secret 不再阻断可审查的脱敏 diff，新出现或重复增加的 finding 仍失败关闭。
+- EvidenceBundle 从 S1 合成基线 v1 明确升级为 v2；usage 不可得使用 `null`，不再伪装为数值零。
 - legacy plan、approval 与 request fingerprint 现在绑定 immutable RouteBinding；hash-valid route mismatch 在 S2 `PREPARED` 的 local preflight 中持久化为 `FAILED_BEFORE_SEND`，credential resolver/fetch 均为零。
 - DeepSeek endpoint 不再接受 invoke-time base URL；credential 只按 approved alias 解析且不在 env/DPAPI 间自动回退。同一冻结请求的有效 credential 在 prepare/invoke 防御性预检链中只解析一次。
 - Provider registry 要求稳定 adapter ID。Direct response 缺失/冲突证据保持 request ID 为 `null` 并进入 `response_invalid → AMBIGUOUS/BLOCKED`；Codex CLI 不再把通用 event/item ID 或批准 model 伪造成实际证据，bound transport 不可观测时 spawn 前停止。

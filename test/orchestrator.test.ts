@@ -15,7 +15,7 @@ import { RoutingProviderAdapter } from "../src/providers/routing.js";
 import { LocalValidationAdapter } from "../src/providers/local.js";
 import { DEFAULT_QUALITY_GATE_POLICY, createQualityGatePolicy, hashQualityCommandCatalog, type QualityCommandRunner } from "../src/quality-gate.js";
 import { DEEPSEEK_ENDPOINT_ORIGIN, DEEPSEEK_ENDPOINT_PATH } from "../src/route-preflight.js";
-import type { ProviderAdapter, ProviderRequest, ProviderResponse, RouteBinding } from "../src/types.js";
+import type { ProviderAdapter, ProviderRequest, ProviderResponse, QualityCommandSpec, RouteBinding } from "../src/types.js";
 
 const roots: string[] = [];
 afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
@@ -106,6 +106,14 @@ class RepairCountingModel extends MockModel {
   override async invoke(request: ProviderRequest): Promise<ProviderResponse> { if (request.stage === "REPAIR") this.repairCalls++; return super.invoke(request); }
 }
 
+class UnavailableUsageModel extends MockModel {
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> { return { ...(await super.invoke(request)), usageAvailability: { inputTokens: false, outputTokens: false, reasoningTokens: false } }; }
+}
+
+class PartialUsageModel extends MockModel {
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> { return { ...(await super.invoke(request)), usageAvailability: { inputTokens: true, outputTokens: true, reasoningTokens: false } }; }
+}
+
 class BadPreimageModel extends MockModel {
   override async invoke(request: ProviderRequest): Promise<ProviderResponse> {
     const response = await super.invoke(request);
@@ -185,6 +193,8 @@ describe("approval workflow", () => {
     expect(completed.routeEvidence?.map(item => item.expectedModel)).toEqual(["gpt-5.6-terra", "deepseek-v4-flash", "local-quality-gates", "gpt-5.6-terra"]);
     expect(completed.usage?.cachedInputTokens).toBe(6);
     expect(completed.evidenceBundleHash).toMatch(/^[a-f0-9]{64}$/); expect(completed.evidenceBundleReference).toMatch(/^evidence\//);
+    const bundle = JSON.parse(await readFile(path.join(subject.store.root, completed.evidenceBundleReference!), "utf8"));
+    expect(bundle.route_evidence_summaries.some((item: any) => item.verification_status === "local")).toBe(true);
     expect(completed.result).toBe("accepted");
   });
 
@@ -306,10 +316,24 @@ describe("approval workflow", () => {
   });
 
   it("runs one bounded repair for an ordinary approved quality-command failure", async () => {
-    const subject = await workflowFixture(); const model = new RepairCountingModel(); const configured = qualityFixture(subject, "lint", async () => ({ exitCode: 2, stdout: "synthetic lint failure", stderr: "", timedOut: false, overflowed: false }));
+    const subject = await workflowFixture(); const model = new RepairCountingModel(); let runs = 0; const configured = qualityFixture(subject, "lint", async () => ({ exitCode: runs++ === 0 ? 2 : 0, stdout: "synthetic lint result", stderr: "", timedOut: false, overflowed: false }));
     const router = new RouterOrchestrator(model, configured.local, subject.store, undefined, subject.worktrees, configured.policy);
-    const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const blocked = await router.approve(planned.taskId, subject.main);
-    expect(blocked.state).toBe("BLOCKED"); expect(model.repairCalls).toBe(1); expect(configured.runner).toHaveBeenCalledTimes(2); expect(blocked.evidenceBundleHash).toMatch(/^[a-f0-9]{64}$/);
+    const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const completed = await router.approve(planned.taskId, subject.main);
+    expect(completed.state).toBe("COMPLETED"); expect(model.repairCalls).toBe(1); expect(configured.runner).toHaveBeenCalledTimes(2); expect(completed.evidenceBundleHash).toMatch(/^[a-f0-9]{64}$/);
+  }, 15_000);
+
+  it("keeps unavailable provider usage distinct from a reported zero", async () => {
+    const subject = await workflowFixture(); const router = new RouterOrchestrator(new UnavailableUsageModel(), new MockLocal(), subject.store, undefined, subject.worktrees);
+    const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const completed = await router.approve(planned.taskId, subject.main);
+    const bundle = JSON.parse(await readFile(path.join(subject.store.root, completed.evidenceBundleReference!), "utf8"));
+    expect(bundle.usage_metrics).toEqual({ input_tokens: null, output_tokens: null, reasoning_tokens: null });
+  });
+
+  it("preserves known input/output usage when reasoning usage is unavailable", async () => {
+    const subject = await workflowFixture(); const router = new RouterOrchestrator(new PartialUsageModel(), new MockLocal(), subject.store, undefined, subject.worktrees);
+    const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const completed = await router.approve(planned.taskId, subject.main);
+    const bundle = JSON.parse(await readFile(path.join(subject.store.root, completed.evidenceBundleReference!), "utf8"));
+    expect(bundle.usage_metrics.input_tokens).toBeGreaterThan(0); expect(bundle.usage_metrics.output_tokens).toBeGreaterThan(0); expect(bundle.usage_metrics.reasoning_tokens).toBeNull();
   });
 
   it("does not repair a quality gate security/freeze failure", async () => {
@@ -318,6 +342,26 @@ describe("approval workflow", () => {
     const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const blocked = await router.approve(planned.taskId, subject.main);
     expect(blocked.state).toBe("BLOCKED"); expect(model.repairCalls).toBe(0); expect(configured.runner).toHaveBeenCalledOnce(); expect(blocked.lastError).toMatch(/security or evidence boundary/); expect(blocked.evidenceBundleHash).toMatch(/^[a-f0-9]{64}$/);
   });
+
+  it("blocks a production timeout through Orchestrator, LocalValidationAdapter, EvidenceBundle, and workflow", async () => {
+    const subject = await workflowFixture(); const helper = path.join(subject.root, "production-timeout.mjs"); await writeFile(helper, "setInterval(() => {}, 1000);\n");
+    const spec: QualityCommandSpec = { command_id: "lint", executable: process.execPath, args: [helper], timeout_ms: 100 };
+    const policy = createQualityGatePolicy({ version: 1, policy_id: "production-integration-timeout", command_ids: ["lint"], command_registry_hash: hashQualityCommandCatalog([spec]), max_diff_bytes: 1024 * 1024, max_file_bytes: 64 * 1024, max_output_bytes: 4096, max_wall_time_ms: 60_000 });
+    const local = new LocalValidationAdapter({ policy, commandCatalog: [spec], evidenceRoot: subject.store.root }); const model = new RepairCountingModel(); const router = new RouterOrchestrator(model, local, subject.store, undefined, subject.worktrees, policy);
+    const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const blocked = await router.approve(planned.taskId, subject.main);
+    expect(blocked.state).toBe("BLOCKED"); expect(model.repairCalls).toBe(0); expect(blocked.evidenceBundleReference).toBeDefined(); expect(blocked.lastError).toMatch(/security or evidence boundary/);
+    const bundle = JSON.parse(await readFile(path.join(subject.store.root, blocked.evidenceBundleReference!), "utf8")); expect(bundle.quality_passed).toBe(false); expect(bundle.tests_run[0]).toMatchObject({ command_id: "lint", timed_out: true });
+  }, 15_000);
+
+  it("blocks without repair and persists evidence when the total quality-gate wall budget is exhausted", async () => {
+    const subject = await workflowFixture(); let clock = 0; const spec: QualityCommandSpec = { command_id: "lint", executable: path.join(subject.root, "trusted-lint"), args: ["--check"], timeout_ms: 1_000 };
+    const policy = createQualityGatePolicy({ version: 1, policy_id: "integration-wall-budget", command_ids: ["lint"], command_registry_hash: hashQualityCommandCatalog([spec]), max_diff_bytes: 1024 * 1024, max_file_bytes: 64 * 1024, max_output_bytes: 4096, max_wall_time_ms: 10_000 });
+    const local = new LocalValidationAdapter({ policy, commandCatalog: [spec], evidenceRoot: subject.store.root, now: () => (clock += 9_500), runCommand: async effective => ({ exitCode: 124, stdout: "", stderr: "", timedOut: effective.timeout_ms < spec.timeout_ms, overflowed: false }) });
+    const model = new RepairCountingModel(); const router = new RouterOrchestrator(model, local, subject.store, undefined, subject.worktrees, policy);
+    const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const blocked = await router.approve(planned.taskId, subject.main);
+    expect(blocked.state).toBe("BLOCKED"); expect(model.repairCalls).toBe(0); expect(blocked.evidenceBundleReference).toBeDefined();
+    const bundle = JSON.parse(await readFile(path.join(subject.store.root, blocked.evidenceBundleReference!), "utf8")); expect(bundle.quality_passed).toBe(false); expect(bundle.quality_gate_results.find((item: { gate_id: string }) => item.gate_id === "gate_budget")?.outcome).toBe("failed");
+  }, 15_000);
 
   it("marks an invalid structured preimage AMBIGUOUS without changing main or retrying", async () => {
     const subject = await workflowFixture(); const model = new BadPreimageModel(); const router = new RouterOrchestrator(model, new MockLocal(), subject.store, undefined, subject.worktrees);
@@ -388,7 +432,7 @@ describe("approval workflow", () => {
     } });
     const routing = new RoutingProviderAdapter(new Map<string, ProviderAdapter>([["openai-codex", new MockModel()], ["deepseek", deepseek]]));
     const router = new RouterOrchestrator(routing, new MockLocal(), subject.store, undefined, subject.worktrees); const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main });
-    expect((await router.approve(planned.taskId, subject.main)).state).toBe("COMPLETED"); expect(resolver).toHaveBeenCalledOnce(); expect(calls).toBe(2);
+    const completed = await router.approve(planned.taskId, subject.main); expect(completed.lastError).toBeUndefined(); expect(completed).toMatchObject({ state: "COMPLETED" }); expect(resolver).toHaveBeenCalledOnce(); expect(calls).toBe(2);
   });
 
   it("keeps a missing provider request ID null and blocks replay after response_invalid", async () => {
@@ -457,7 +501,7 @@ function deepResponse(payload: unknown): Response {
 
 function qualityFixture(subject: { root: string; store: StateStore }, commandId: "lint" | "format_check", implementation: QualityCommandRunner) {
   const spec = { command_id: commandId, executable: path.join(subject.root, "trusted", "synthetic-quality.exe"), args: commandId === "format_check" ? ["--check"] : ["--synthetic-lint"], timeout_ms: 1_000 } as const;
-  const policy = createQualityGatePolicy({ version: 1, policy_id: `synthetic-${commandId}`, command_ids: [commandId], command_registry_hash: hashQualityCommandCatalog([spec]), max_diff_bytes: 1024 * 1024, max_file_bytes: 64 * 1024, max_output_bytes: 4096 });
+  const policy = createQualityGatePolicy({ version: 1, policy_id: `synthetic-${commandId}`, command_ids: [commandId], command_registry_hash: hashQualityCommandCatalog([spec]), max_diff_bytes: 1024 * 1024, max_file_bytes: 64 * 1024, max_output_bytes: 4096, max_wall_time_ms: 60_000 });
   const runner = vi.fn(implementation); const local = new LocalValidationAdapter({ policy, commandCatalog: [spec], evidenceRoot: subject.store.root, runCommand: runner });
   return { policy, local, runner };
 }

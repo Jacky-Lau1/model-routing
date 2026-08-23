@@ -2,7 +2,7 @@
 
 > 用途：用户计划为每个实施阶段开启一个新的 Codex 主会话。本文提供共同上下文、阶段依赖、每阶段可直接复制的启动 Prompt 和结束交接要求。
 >
-> 状态：S0、S1、S2、S3、S4、S5 已于 2026-08-21 通过；S6 可开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
+> 状态：S0–S5 已于 2026-08-21 通过，S6 已于 2026-08-23 通过；S7 尚未开始。任何后续阶段是否实际开始、是否允许写文件、测试、commit 或 push，仍以新会话中的用户授权为准。
 
 ## 一、所有新会话先读
 
@@ -16,11 +16,12 @@
 6. 已完成 S3 后读取 `docs/20-s3-isolated-worktree.md`
 7. 已完成 S4 后读取 `docs/21-s4-safe-executor.md`
 8. 已完成 S5 后读取 `docs/22-s5-route-preflight.md`
-9. `docs/08-decisions.md`
-10. `CHANGELOG.md`
-11. `logs/decision-log.md`
-12. `logs/routing-validation-log.md`
-13. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
+9. 已完成 S6 后读取 `docs/23-s6-quality-evidence.md`
+10. `docs/08-decisions.md`
+11. `CHANGELOG.md`
+12. `logs/decision-log.md`
+13. `logs/routing-validation-log.md`
+14. 当前分支、工作树、PR（如有）最新状态，以及当前阶段涉及的源码/测试
 
 共同目标体验：
 
@@ -98,8 +99,8 @@ S10 有限真实 Pilot
 | S3 | 已通过 | 2026-08-21：run-scoped detached worktree、dirty evidence、归属/恢复/冲突检测；116/116 离线测试 | 保持变更隔离，不误称 OS sandbox |
 | S4 | 已通过 | 2026-08-21：manifest-only read、single structured patch、physical path/env boundary；169/169 离线测试 | 保持 capability/OS sandbox 边界 |
 | S5 | 已通过 | 2026-08-21：immutable binding、durable preflight、逐轮 observable route-tuple evidence；279/279 离线测试 | 保持 peer/proxy 未观测边界，不伪称真实路由 |
-| S6 | 可开始 | 当前只有局部 scope/validation evidence | 只实施 quality gate、secret scan、diff freeze 与 EvidenceBundle |
-| S7 | 未开始 | 当前 foreground interface 未实现 | S6 通过后开始 |
+| S6 | 已通过 | 2026-08-23：physical snapshot、只读 Git/diff freeze、完整 report、EvidenceBundle v2；323/323 离线测试 | 保持 trusted command/OS sandbox 与 legacy bridge 边界 |
+| S7 | 未开始 | 当前 foreground interface 未实现 | 仅在独立 S7 会话按授权开始 |
 | S8 | 未开始 | 当前 review/apply 语义未分离 | S7 通过后开始 |
 | S9 | 未开始 | Orchestrator-first E2E 未认证 | S8 通过后开始 |
 | S10 | 禁止运行 | 等待 S0–S9 和明确费用授权 | 仅用户明确说“运行”后 |
@@ -225,6 +226,10 @@ EvidenceBundle 至少绑定 task/package/route/policy/base/worktree/attempt/diff
 
 完成后用通过、测试失败、scope violation、secret、预算超限等 fixture 验证 bundle 和目标状态。
 ```
+
+S6 完成证据：固定 command catalog 与 deterministic gate order 已接入；physical snapshot 拒绝 symlink/reparse 越界并绑定文件身份；secret baseline 以多重集比较，raw diff ceiling 在脱敏前执行；Git freeze 不写共享 object store。QualityGateReport 绑定完整请求、gate 顺序、artifact 与 pre/post snapshot 并带 self hash；EvidenceBundle v2 区分 usage `null` 与真实 `0`。
+
+TypeScript `--noEmit`、S6 定向 7/7 files 118/118 tests 和全量 19/19 files 323/323 tests 通过；全部为 synthetic repo/mock provider/credential。未读取真实 config/auth/DPAPI/credential-bearing env 值；最终文档审计的一次非敏感 `USERPROFILE` locator 意外展开见 `docs/23`。未调用 API/live benchmark。trusted command 非 OS sandbox、secret scan 启发式和 legacy bridge projection 保持显式风险，S7 尚未开始。
 
 ## 十二、S7 新对话 Prompt：GPT 前台 CLI/MCP/Skill
 

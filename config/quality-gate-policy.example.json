@@ -6,5 +6,6 @@
   "max_diff_bytes": 2097152,
   "max_file_bytes": 524288,
   "max_output_bytes": 65536,
-  "policy_hash": "1abdd3ed9b753768268e54ebf09434337781589116c58186a48609113f6aa2af"
+  "max_wall_time_ms": 300000,
+  "policy_hash": "db6601b5ac8f7a0e64bc6b01ffbec65d3e9c5c7575a9706d7101322ea592aa06"
 }

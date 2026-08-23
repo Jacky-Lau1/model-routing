@@ -44,6 +44,7 @@ describe("S1 JSON Schema artifacts", () => {
   it("keeps the S6 quality policy schema and default-deny example strict and hash-valid", async () => {
     const schema = JSON.parse(await readFile(path.join(root, "config/quality-gate-policy.schema.json"), "utf8")) as any;
     expect(schema.additionalProperties).toBe(false); expect(schema.required).toContain("command_registry_hash");
+    expect(schema.properties.max_diff_bytes.maximum).toBe(16 * 1024 * 1024); expect(schema.properties.max_file_bytes.maximum).toBe(4 * 1024 * 1024); expect(schema.properties.max_output_bytes.maximum).toBe(1024 * 1024); expect(schema.properties.max_wall_time_ms.maximum).toBe(30 * 60_000);
     const example = JSON.parse(await readFile(path.join(root, "config/quality-gate-policy.example.json"), "utf8"));
     expect(() => assertQualityGatePolicy(example)).not.toThrow(); expect(example.command_ids).toEqual([]);
     const legacyPlan = JSON.parse(await readFile(path.join(root, "config/plan-packet.schema.json"), "utf8")) as any;

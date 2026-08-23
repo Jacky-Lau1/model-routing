@@ -1,6 +1,6 @@
 # 11｜最小实现与 CLI
 
-> 历史实现说明：本文描述整改前的 TypeScript Phase 0/1 主体。S0 已于 2026-08-21 完成默认入口退役；S3 把执行及其后阶段切到 isolated worktree，S4 已完成 Direct DeepSeek 的离线 capability boundary，S5 已完成 legacy execution bridge 的 immutable RouteBinding 与 mock route-tuple preflight。legacy planning/full contract core 仍待 S7 迁移，完整质量门与 EvidenceBundle 属于 S6。当前执行基线见 `docs/16-orchestrator-first-implementation-plan.md`。
+> 历史实现说明：本文描述整改前的 TypeScript Phase 0/1 主体。S0–S5 已完成入口、合同、attempt、worktree、capability 与 route preflight；S6 已完成 legacy execution bridge 的顺序化 Local Quality Gate 和 EvidenceBundle v2。legacy planning/full contract core 仍待 S7 迁移。当前执行基线见 `docs/16-orchestrator-first-implementation-plan.md`。
 
 ## 已实现边界
 
@@ -52,6 +52,7 @@ DeepSeek 官方 V4 思考模式只提供关闭、`high` 和 `max`；`low/medium`
 - credential decrypt child 使用由校验后 `SystemRoot` 派生的绝对 PowerShell 路径和最小 environment，不继承 PATH；模型消息、plan 和持久状态不接收 auth secret。
 - RouteBinding 由 canonical/legacy builder 深度 clone/freeze并进入 plan/approval/request fingerprint。hash-valid tuple mismatch 在 S2 `PREPARED` 内写 `FAILED_BEFORE_SEND`；DeepSeek credential 只按批准 alias 选择单一来源，同一冻结请求只解析一次。缺失 request ID 不写 `unreported`，而是 `response_invalid → AMBIGUOUS/BLOCKED`。
 - 以上只证明 Direct DeepSeek 本地 capability surface 的离线失败关闭，不是 OS sandbox，也不代表 Codex/local adapter 具有同一边界。
-- 本地验证命令来自经用户批准的计划，但仍只应对可信项目运行。
+- 本地验证只执行 S6 policy 中固定 ID 对应的 trusted executable/argv，记录 bounded/redacted diagnostics、timeout、overflow 和总 wall budget；production runner 的进程树清理有界失败关闭。仍只应对可信项目运行，因为它不是 OS sandbox。
+- S6 在读取 snapshot/artifact 时验证物理 containment、文件身份和大小上限，按 raw diff bytes 失败关闭；Git 读取禁用 lazy fetch/optional locks/replace/textconv，并拒绝非标准 index flags。final capture 在 artifact 前刷新 forbidden/reparse/ignored，再由 request-bound/self-hashed QualityGateReport 与 EvidenceBundle v2 复核当前 worktree。既有 baseline secret 不复制原文；usage unavailable 为 `null`，与真实零区分。
 - 不提交 `.env`、API key、完整对话或 reasoning 内容。
 - 上游模型、API 或 Codex CLI 能力改变后，模型状态应回退到待认证。

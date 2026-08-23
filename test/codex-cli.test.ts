@@ -14,7 +14,13 @@ describe("Codex CLI observable evidence boundary", () => {
       JSON.stringify({ type: "item.completed", id: "generic-item-id", item: { type: "agent_message", text: "done" } }),
       JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 2 } }),
     ].join("\n");
-    expect(parseCodexJsonLines(output, request)).toMatchObject({ requestId: null, model: "", text: "done" });
+    expect(parseCodexJsonLines(output, request)).toMatchObject({
+      requestId: null,
+      model: "",
+      text: "done",
+      usage: { inputTokens: 1, outputTokens: 2, reasoningTokens: 0 },
+      usageAvailability: { inputTokens: true, outputTokens: true, reasoningTokens: false },
+    });
   });
 
   it("records only explicit request/response ID and model fields without approved-value fallback", () => {

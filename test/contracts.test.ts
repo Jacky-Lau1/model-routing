@@ -202,12 +202,19 @@ describe("strict schema-equivalent validation", () => {
     expect(() => assertAttemptRecord(attempt)).not.toThrow();
     expect(() => assertAttemptRecord({ ...attempt, unknown: true })).toThrow(/unknown field/);
 
+    const qualityPolicyBody = { version: 1 as const, policy_id: "synthetic-quality", command_ids: [], command_registry_hash: stableHash([]), max_diff_bytes: 1024, max_file_bytes: 1024, max_output_bytes: 1024, max_wall_time_ms: 300_000 };
+    const qualityPolicy = { ...qualityPolicyBody, policy_hash: stableHash(qualityPolicyBody) };
+    const gates = ["base_identity", "preapply_scope", "changed_files_scope", "forbidden_paths", "secret_scan", "diff_sanity", "format_check", "lint", "typecheck", "unit_tests", "build", "project_acceptance", "final_freeze", "evidence_artifact", "gate_budget"].map(gate_id => ({ gate_id, outcome: (["format_check", "lint", "typecheck", "unit_tests", "build", "project_acceptance"].includes(gate_id) ? "not_applicable" : "passed") as "passed" | "not_applicable", evidence_hash: stableHash({ gate_id }), summary: "synthetic" }));
+    const qualityRequest = { run_id: "synthetic-run", task_id: subject.taskPackage.task_id, base_commit: COMMIT, plan_hash: subject.taskPackage.task_package_hash, approval_hash: "4".repeat(64), isolation_hash: "6".repeat(64), worktree_id: "synthetic-worktree", write_scope: ["src/a.ts"], command_ids: [], policy_hash: qualityPolicy.policy_hash, effective_policy_hash: subject.effectivePolicy.policy_hash, max_wall_time_ms: qualityPolicy.max_wall_time_ms };
+    const qualityRequestHash = stableHash(qualityRequest);
+    const qualityReport = { version: 1, run_id: qualityRequest.run_id, task_id: qualityRequest.task_id, base_commit: COMMIT, plan_hash: qualityRequest.plan_hash, approval_hash: qualityRequest.approval_hash, isolation_hash: qualityRequest.isolation_hash, worktree_id: qualityRequest.worktree_id, policy_hash: qualityRequest.policy_hash, effective_policy_hash: qualityRequest.effective_policy_hash, max_wall_time_ms: qualityPolicy.max_wall_time_ms, request_hash: qualityRequestHash, passed: true, worktree_head: COMMIT, files_changed: ["src/a.ts"], content_snapshot_hash: "7".repeat(64), post_artifact_snapshot_hash: "7".repeat(64), worktree_snapshot_hash: "b".repeat(64), diff_hash: "d".repeat(64), diff_reference: `evidence/synthetic-run/${"d".repeat(64)}.diff`, quality_gate_results: gates, tests_run: [], scope_violations: [], privacy_violations: [], secret_scan_summary: { outcome: "passed", findings: 0, baseline_findings: 0, new_findings: 0 }, wall_clock_time_ms: 0, redaction_notes: ["No real data"] };
     const bundle = createEvidenceBundle({
-      version: 1, bundle_id: "bundle-1", run_id: "synthetic-run", task_id: subject.taskPackage.task_id, contract_provenance: "canonical",
+      version: 2, bundle_id: "bundle-1", run_id: "synthetic-run", task_id: subject.taskPackage.task_id, contract_provenance: "canonical",
       task_package_hash: subject.taskPackage.task_package_hash, route_binding_hash: subject.routeBinding.route_binding_hash,
-      policy_hash: subject.effectivePolicy.policy_hash, quality_policy_hash: "3".repeat(64), approval_hash: "4".repeat(64), execution_context_hash: "5".repeat(64), isolation_hash: "6".repeat(64), worktree_id: "synthetic-worktree", base_commit: COMMIT, worktree_head: COMMIT,
+      policy_hash: subject.effectivePolicy.policy_hash, quality_policy_hash: qualityPolicy.policy_hash, quality_policy: qualityPolicy, approval_hash: "4".repeat(64), execution_context_hash: "5".repeat(64), isolation_hash: "6".repeat(64), worktree_id: "synthetic-worktree", base_commit: COMMIT, worktree_head: COMMIT,
+      quality_request_hash: qualityRequestHash, quality_report_hash: stableHash(qualityReport), quality_passed: true, quality_write_scope: ["src/a.ts"], quality_command_ids: [], post_artifact_snapshot_hash: "7".repeat(64), worktree_snapshot_hash: "b".repeat(64),
       attempt_ids: [attempt.attempt_id], route_evidence_ids: [], attempt_summaries: [{ attempt_id: attempt.attempt_id, stage: "EXECUTE", status: "PREPARED", failure_class: "none" }], route_evidence_summaries: [], files_changed: ["src/a.ts"], content_snapshot_hash: "7".repeat(64), diff_hash: "d".repeat(64),
-      diff_reference: ".router-state/evidence/synthetic.diff", quality_gate_results: [], tests_run: [], scope_violations: [], privacy_violations: [],
+      diff_reference: `evidence/synthetic-run/${"d".repeat(64)}.diff`, quality_gate_results: gates, tests_run: [], scope_violations: [], privacy_violations: [],
       secret_scan_summary: { outcome: "passed", findings: 0, baseline_findings: 0, new_findings: 0 }, usage_metrics: { input_tokens: 0, output_tokens: 0, reasoning_tokens: 0 },
       cost_metrics: { provider_reported_usd: null, estimated_list_usd: null, invoice_usd: null, chatgpt_quota: null },
       wall_clock_time_ms: 0, repair_count: 0, remaining_risks: ["Synthetic S1 contract only"], redaction_notes: ["No real data"],
@@ -216,6 +223,19 @@ describe("strict schema-equivalent validation", () => {
     expect(bundle.bundle_hash).toMatch(/^[a-f0-9]{64}$/);
     expect(Object.isFrozen(bundle)).toBe(true); expect(Object.isFrozen(bundle.files_changed)).toBe(true); expect(Object.isFrozen(bundle.secret_scan_summary)).toBe(true);
     expect(() => bundle.files_changed.push("src/b.ts")).toThrow();
+    const { bundle_hash: _bundleHash, ...bundleBody } = bundle;
+    const unavailableUsage = createEvidenceBundle({ ...bundleBody, usage_metrics: { input_tokens: null, output_tokens: null, reasoning_tokens: null } });
+    expect(bundle.usage_metrics.input_tokens).toBe(0); expect(unavailableUsage.usage_metrics.input_tokens).toBeNull();
+    expect(() => createEvidenceBundle({ ...bundleBody, quality_gate_results: [] })).toThrow(/sequence/);
+    expect(() => createEvidenceBundle({ ...bundleBody, quality_report_hash: "f".repeat(64) })).toThrow(/report hash/);
+    expect(() => createEvidenceBundle({ ...bundleBody, quality_passed: false })).toThrow(/quality_passed/);
+    expect(() => createEvidenceBundle({ ...bundleBody, files_changed: ["outside.ts"] })).toThrow(/write scope/);
+    expect(() => createEvidenceBundle({ ...bundleBody, post_artifact_snapshot_hash: "a".repeat(64) })).toThrow(/artifact gate/);
+    expect(() => createEvidenceBundle({ ...bundleBody, wall_clock_time_ms: qualityPolicy.max_wall_time_ms })).toThrow(/gate_budget/);
+    const otherHead = "2".repeat(40); expect(() => createEvidenceBundle({ ...bundleBody, worktree_head: otherHead, quality_report_hash: stableHash({ ...qualityReport, worktree_head: otherHead }) })).toThrow(/worktree or artifact/);
+    const otherReference = "evidence/other-run/synthetic.diff"; expect(() => createEvidenceBundle({ ...bundleBody, diff_reference: otherReference, quality_report_hash: stableHash({ ...qualityReport, diff_reference: otherReference }) })).toThrow(/worktree or artifact/);
+    const forbiddenRequest = { ...qualityRequest, write_scope: [".env"] }; const forbiddenRequestHash = stableHash(forbiddenRequest); const forbiddenReport = { ...qualityReport, request_hash: forbiddenRequestHash, files_changed: [".env"] };
+    expect(() => createEvidenceBundle({ ...bundleBody, quality_write_scope: [".env"], files_changed: [".env"], quality_request_hash: forbiddenRequestHash, quality_report_hash: stableHash(forbiddenReport) })).toThrow(/forbidden-path/);
     expect(() => assertEvidenceBundle({ ...bundle, quality_gate_results: [
       { gate_id: "scope", outcome: "passed", evidence_hash: "8".repeat(64), summary: "synthetic" },
       { gate_id: "scope", outcome: "passed", evidence_hash: "8".repeat(64), summary: "synthetic" },
