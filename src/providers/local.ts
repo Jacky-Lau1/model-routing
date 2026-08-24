@@ -30,7 +30,7 @@ export class LocalValidationAdapter implements ProviderAdapter {
     const report = await this.gate.run(request.qualityGate, request.workingDirectory);
     const requestId = `local-${request.qualityGate.run_id}-${report.report_hash.slice(0, 16)}`;
     return {
-      text: JSON.stringify(report), requestId, provider: "local", model: "local-quality-gates", usageAvailability: { inputTokens: true, outputTokens: true, reasoningTokens: true },
+      text: JSON.stringify(report), requestId, provider: "local", model: "local-quality-gates", usageAvailability: { inputTokens: true, outputTokens: true, reasoningTokens: true, cacheHitTokens: true, cacheMissTokens: true },
       usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 },
       routeEvidence: {
         routeBindingHash: null, adapterId: this.adapterId, expectedProvider: "local", expectedModel: "local-quality-gates", expectedOrigin: null, expectedPath: null,

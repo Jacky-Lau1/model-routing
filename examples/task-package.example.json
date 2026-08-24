@@ -34,13 +34,16 @@
     "expires_at": null
   },
   "request_budget": {
+    "max_attempts": 2,
+    "max_provider_requests": 6,
     "max_input_tokens": 4000,
     "max_output_tokens": 1000,
     "max_tool_calls": 2,
-    "max_wall_time_ms": 30000,
+    "max_request_wall_time_ms": 30000,
+    "max_wall_time_ms": 300000,
     "max_estimated_cost_usd": 0.25,
     "billing_mode": "prepaid"
   },
   "created_at": "2026-08-21T00:00:00.000Z",
-  "task_package_hash": "c1bad94ad0446beb0486939faee8282463262cb9feae7cab708ffa764a9a4d94"
+  "task_package_hash": "2c7a5fbb7028d35c64066bee5beec81ed50a12730ca4c56744f33153e6462fb5"
 }

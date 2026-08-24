@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "provider_id": "deepseek",
+  "adapter_id": "deepseek-chat-direct",
+  "model_id": "deepseek-v4-flash",
+  "endpoint_origin": "https://api.deepseek.com",
+  "endpoint_path": "/chat/completions",
+  "wire_protocol": "chat_completions",
+  "auth_alias": "deepseek-dpapi",
+  "reasoning_mode": "enabled",
+  "reasoning_effort": "high",
+  "request_budget": { "max_attempts": 2, "max_provider_requests": 6, "max_input_tokens": 4000, "max_output_tokens": 1000, "max_tool_calls": 2, "max_request_wall_time_ms": 30000, "max_wall_time_ms": 300000, "max_estimated_cost_usd": 0.00308, "billing_mode": "prepaid" },
+  "network_scope": ["https://api.deepseek.com"],
+  "environment_scope": ["CODEX_ROUTER_SECRET_PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"],
+  "command_scope": ["powershell-dpapi-decrypt"]
+}

@@ -40,4 +40,4 @@
 
 ## 策略文件
 
-策略示例在 [config/routing-policy.example.yaml](../config/routing-policy.example.yaml)。实际配置必须放在本机受保护路径，不能把密钥或本地端点写进公开仓库。
+project policy 示例在 [config/project-policy.example.json](../config/project-policy.example.json)，user policy 示例在 [config/user-policy.example.json](../config/user-policy.example.json)。runtime 只读取严格 JSON；实际配置必须放在本机受保护路径，不能把密钥或本地端点写进公开仓库。

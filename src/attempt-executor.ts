@@ -3,7 +3,7 @@ import { stableHash } from "./canonical.js";
 import { AttemptPersistence, PersistenceError, persistenceErrorForStatus } from "./attempt-persistence.js";
 import { redactError, redactText } from "./redaction.js";
 import { assertTransition } from "./state-machine.js";
-import type { AttemptRecord, AttemptUsage, FailureClass, Stage, WorkflowRecord, WorkflowState } from "./types.js";
+import type { AttemptRecord, AttemptUsage, FailureClass, ProviderTransportRound, Stage, WorkflowRecord, WorkflowState } from "./types.js";
 
 export type AttemptCheckpoint = "PREPARED" | "SENDING" | "SUCCEEDED";
 
@@ -25,6 +25,9 @@ export interface VerifiedResponseMetadata {
   response_model: string;
   response_origin: string;
   usage: AttemptUsage;
+  transport_rounds: ProviderTransportRound[];
+  provider_reported_cost_usd: number | null;
+  estimated_list_cost_usd: number | null;
 }
 
 export interface AttemptOperation<T> {
@@ -96,6 +99,9 @@ export class DurableAttemptExecutor {
         response_model: null,
         response_origin: null,
         usage: null,
+        transport_rounds: [],
+        provider_reported_cost_usd: null,
+        estimated_list_cost_usd: null,
         redacted_error: null,
       };
       attempt = await this.persistence.saveAttempt(request.task_id, attempt);
@@ -120,7 +126,7 @@ export class DurableAttemptExecutor {
       try {
         response = await operation.send();
       } catch (error) {
-        attempt = await this.completeFailure(request.task_id, attempt, "AMBIGUOUS", "transport_unknown", error);
+        attempt = await this.completeFailure(request.task_id, attempt, "AMBIGUOUS", "transport_unknown", error, extractTransportRounds(error));
         await this.blockWorkflow(workflow, attempt, error);
         throw new AttemptBlockedError(attempt);
       }
@@ -128,9 +134,9 @@ export class DurableAttemptExecutor {
       let verified: VerifiedResponseMetadata;
       try {
         verified = await operation.validate(response);
-        assertVerifiedResponse(verified);
+        assertVerifiedResponse(verified, request.stage);
       } catch (error) {
-        attempt = await this.completeFailure(request.task_id, attempt, "AMBIGUOUS", "response_invalid", error);
+        attempt = await this.completeFailure(request.task_id, attempt, "AMBIGUOUS", "response_invalid", error, extractTransportRounds(response));
         await this.blockWorkflow(workflow, attempt, error);
         throw new AttemptBlockedError(attempt);
       }
@@ -143,6 +149,9 @@ export class DurableAttemptExecutor {
         response_model: verified.response_model,
         response_origin: verified.response_origin,
         usage: verified.usage,
+        transport_rounds: verified.transport_rounds,
+        provider_reported_cost_usd: verified.provider_reported_cost_usd,
+        estimated_list_cost_usd: verified.estimated_list_cost_usd,
       });
       await this.transitionWorkflow(workflow, request.success_workflow_state, attempt.attempt_id, null);
       await this.options.checkpoint?.("SUCCEEDED", attempt);
@@ -161,7 +170,7 @@ export class DurableAttemptExecutor {
   async repair<T>(request: AttemptExecutionRequest, operation: AttemptOperation<T>): Promise<AttemptExecutionResult<T>> {
     if (request.round < 1) throw new ExecutionConflictError("Repair requires round >= 1");
     const workflow = await this.persistence.tryLoadWorkflow(request.task_id);
-    if (workflow && workflow.state !== "REPAIR_REQUIRED") await this.transitionWorkflow(workflow, "REPAIR_REQUIRED", workflow.active_attempt_id, null);
+    if (workflow && workflow.state !== "REPAIR_REQUIRED") throw new ExecutionConflictError("Workflow is not pending an approved repair");
     return this.execute({ ...request, initial_workflow_state: "REPAIR_REQUIRED", start_workflow_state: "EXECUTING" }, operation);
   }
 
@@ -170,6 +179,22 @@ export class DurableAttemptExecutor {
       workflow: await this.persistence.tryLoadWorkflow(taskId),
       attempts: await this.persistence.listAttempts(taskId),
     };
+  }
+
+  /** Create the canonical foreground checkpoint before approval or side effects. */
+  async initializeAwaitingApproval(taskId: string, runId: string, preApprovalHash: string): Promise<WorkflowRecord> {
+    const existing = await this.persistence.tryLoadWorkflow(taskId);
+    if (existing) {
+      this.assertWorkflowBinding(existing, runId, preApprovalHash);
+      if (existing.state !== "AWAITING_APPROVAL") throw new ExecutionConflictError("Workflow already advanced beyond preparation");
+      return existing;
+    }
+    const now = this.timestamp();
+    return this.persistence.saveWorkflow({
+      version: 1, run_id: runId, task_id: taskId, approval_hash: preApprovalHash,
+      state: "AWAITING_APPROVAL", attempt_ids: [], active_attempt_id: null,
+      blocked_reason: null, revision: 0, created_at: now, updated_at: now,
+    });
   }
 
   async bindApproval(taskId: string, runId: string, previousApprovalHash: string, approvalHash: string): Promise<WorkflowRecord> {
@@ -199,6 +224,53 @@ export class DurableAttemptExecutor {
     this.assertWorkflowBinding(workflow, runId, approvalHash);
     if (workflow.state === "BLOCKED") return workflow;
     return this.transitionWorkflow(workflow, "BLOCKED", workflow.active_attempt_id, redactError(reason));
+  }
+
+  /** Final review is local and never starts or retries a provider attempt. */
+  async finalizeReview(taskId: string, runId: string, approvalHash: string, decision: "PASS" | "REPAIR_REQUIRED" | "BLOCKED", reason?: string): Promise<WorkflowRecord> {
+    if (!["PASS", "REPAIR_REQUIRED", "BLOCKED"].includes(decision)) throw new ExecutionConflictError("Final review decision must be PASS, REPAIR_REQUIRED, or BLOCKED");
+    const release = await this.persistence.tryAcquireExecutionLock(taskId, approvalHash);
+    if (!release) throw new ExecutionBusyError();
+    try {
+      const workflow = await this.persistence.loadWorkflow(taskId);
+      this.assertWorkflowBinding(workflow, runId, approvalHash);
+      if (decision === "PASS") {
+        if (workflow.state === "APPLY_PENDING") return workflow;
+        if (workflow.state !== "REVIEW_PENDING") throw new ExecutionConflictError("Workflow is not pending final review");
+        return this.transitionWorkflow(workflow, "APPLY_PENDING", workflow.active_attempt_id, null);
+      }
+      if (decision === "REPAIR_REQUIRED") {
+        if (workflow.state === "REPAIR_REQUIRED") return workflow;
+        if (workflow.state !== "REVIEW_PENDING") throw new ExecutionConflictError("Workflow is not pending final review");
+        return this.transitionWorkflow(workflow, "REPAIR_REQUIRED", workflow.active_attempt_id, reason ?? "Final review requires one controlled repair");
+      }
+      if (workflow.state === "BLOCKED") return workflow;
+      if (["PASSED", "ABORTED"].includes(workflow.state)) throw new ExecutionConflictError("Terminal workflow cannot be blocked by final review");
+      return this.transitionWorkflow(workflow, "BLOCKED", workflow.active_attempt_id, reason ?? "Final review blocked");
+    } finally { await release(); }
+  }
+
+  /** Complete the explicit local apply checkpoint; no Git commit/merge/push is performed here. */
+  async completeApply(taskId: string, runId: string, approvalHash: string): Promise<WorkflowRecord> {
+    const workflow = await this.persistence.loadWorkflow(taskId);
+    this.assertWorkflowBinding(workflow, runId, approvalHash);
+    if (workflow.state === "PASSED") return workflow;
+    if (workflow.state !== "APPLY_PENDING") throw new ExecutionConflictError("Workflow is not pending controlled apply");
+    return this.transitionWorkflow(workflow, "PASSED", workflow.active_attempt_id, null);
+  }
+
+  /** Abort only after acquiring the same lock used by provider execution. */
+  async abort(taskId: string, runId: string, approvalHash: string): Promise<WorkflowRecord> {
+    const release = await this.persistence.tryAcquireExecutionLock(taskId, approvalHash);
+    if (!release) throw new ExecutionBusyError();
+    try {
+      const workflow = await this.persistence.loadWorkflow(taskId);
+      this.assertWorkflowBinding(workflow, runId, approvalHash);
+      if (workflow.state === "ABORTED") return workflow;
+      if (workflow.state === "PASSED") throw new ExecutionConflictError("Passed workflow cannot be aborted");
+      assertTransition(workflow.state, "ABORTED");
+      return this.persistence.saveWorkflow({ ...workflow, state: "ABORTED", active_attempt_id: null, blocked_reason: null, revision: workflow.revision + 1, updated_at: this.timestamp() });
+    } finally { await release(); }
   }
 
   /** Startup recovery never sends. Any durable SENDING attempt becomes AMBIGUOUS/BLOCKED. */
@@ -270,12 +342,13 @@ export class DurableAttemptExecutor {
     return this.transitionWorkflow(workflow, "BLOCKED", attempt.attempt_id, redactError(error));
   }
 
-  private async completeFailure(taskId: string, attempt: AttemptRecord, status: "FAILED_BEFORE_SEND" | "AMBIGUOUS", failureClass: FailureClass, error: unknown): Promise<AttemptRecord> {
+  private async completeFailure(taskId: string, attempt: AttemptRecord, status: "FAILED_BEFORE_SEND" | "AMBIGUOUS", failureClass: FailureClass, error: unknown, transportRounds: ProviderTransportRound[] = []): Promise<AttemptRecord> {
     return this.persistence.saveAttempt(taskId, {
       ...attempt,
       status,
       completed_at: this.timestamp(),
       failure_class: failureClass,
+      transport_rounds: transportRounds,
       redacted_error: persistenceErrorForStatus(error),
     });
   }
@@ -308,8 +381,15 @@ function validateRequest(request: AttemptExecutionRequest): void {
   if (!Number.isInteger(request.round) || request.round < 0) throw new ExecutionConflictError("Invalid attempt round");
 }
 
-function assertVerifiedResponse(value: VerifiedResponseMetadata): void {
+function assertVerifiedResponse(value: VerifiedResponseMetadata, stage: Stage): void {
   if (value.complete !== true) throw new Error("Provider response was incomplete");
   for (const field of [value.provider_request_id, value.response_model, value.response_origin]) if (typeof field !== "string" || field.length === 0) throw new Error("Provider response evidence was incomplete");
-  for (const count of [value.usage.input_tokens, value.usage.output_tokens, value.usage.reasoning_tokens]) if (!Number.isInteger(count) || count < 0) throw new Error("Provider usage was invalid");
+  for (const count of Object.values(value.usage)) if (!Number.isInteger(count) || count < 0) throw new Error("Provider usage was invalid");
+  if (!Array.isArray(value.transport_rounds)) throw new Error("Provider transport-round evidence was invalid");
+  for (const cost of [value.provider_reported_cost_usd, value.estimated_list_cost_usd]) if (cost !== null && (typeof cost !== "number" || !Number.isFinite(cost) || cost < 0)) throw new Error("Provider cost evidence was invalid");
+}
+
+function extractTransportRounds(value: unknown): ProviderTransportRound[] {
+  const candidate = value && typeof value === "object" ? ((value as { transportRounds?: unknown; transport_rounds?: unknown }).transportRounds ?? (value as { transport_rounds?: unknown }).transport_rounds) : undefined;
+  return Array.isArray(candidate) ? candidate.map(item => structuredClone(item) as ProviderTransportRound) : [];
 }

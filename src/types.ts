@@ -19,9 +19,12 @@ export type AttemptStatus = AttemptState;
 export type FailureClass = "none" | "local_preflight" | "provider_rejected" | "transport_unknown" | "response_invalid" | "cancelled";
 
 export interface RequestBudget {
+  max_attempts: number;
+  max_provider_requests: number;
   max_input_tokens: number;
   max_output_tokens: number;
   max_tool_calls: number;
+  max_request_wall_time_ms: number;
   max_wall_time_ms: number;
   max_estimated_cost_usd: number | null;
   billing_mode: BillingMode;
@@ -95,6 +98,8 @@ export interface RouteBinding {
   auth_alias: string | null;
   reasoning_mode: "disabled" | "enabled" | "local";
   reasoning_effort: ReasoningEffort;
+  pricing_catalog_version: string | null;
+  pricing_catalog_hash: string | null;
   request_budget: RequestBudget;
   read_scope: string[];
   write_scope: string[];
@@ -144,6 +149,36 @@ export interface AttemptUsage {
   input_tokens: number;
   output_tokens: number;
   reasoning_tokens: number;
+  cached_input_tokens: number;
+  cache_write_tokens: number;
+  cache_hit_tokens: number;
+  cache_miss_tokens: number;
+}
+
+export type PricingTimeBand = "peak" | "off_peak" | "standard";
+export type TransportRoundOutcome = "SUCCEEDED" | "REJECTED" | "AMBIGUOUS";
+
+export interface ProviderTransportRound {
+  round_id: string;
+  sequence: number;
+  stage: Stage;
+  request_id: string | null;
+  started_at: string;
+  completed_at: string | null;
+  wall_clock_time_ms: number | null;
+  response_model: string | null;
+  response_origin: string | null;
+  response_path: string | null;
+  http_status: number | null;
+  outcome: TransportRoundOutcome;
+  failure_class: string | null;
+  usage: AttemptUsage | null;
+  cache_status: "hit" | "miss" | "mixed" | "none" | "unknown";
+  provider_reported_cost_usd: number | null;
+  estimated_list_cost_usd: number | null;
+  pricing_catalog_version: string | null;
+  pricing_catalog_hash: string | null;
+  pricing_time_band: PricingTimeBand | null;
 }
 
 export interface AttemptRecord {
@@ -162,11 +197,14 @@ export interface AttemptRecord {
   response_model: string | null;
   response_origin: string | null;
   usage: AttemptUsage | null;
+  transport_rounds: ProviderTransportRound[];
+  provider_reported_cost_usd: number | null;
+  estimated_list_cost_usd: number | null;
   redacted_error: string | null;
 }
 
 export interface EvidenceBundle {
-  version: 2;
+  version: 3;
   bundle_id: string;
   run_id: string;
   task_id: string;
@@ -193,6 +231,7 @@ export interface EvidenceBundle {
   route_evidence_ids: string[];
   attempt_summaries: Array<{ attempt_id: string; stage: Stage; status: AttemptStatus; failure_class: FailureClass }>;
   route_evidence_summaries: Array<{ evidence_id: string; provider: string; model: string; verification_status: ProviderRouteEvidence["verificationStatus"]; request_id_present: boolean }>;
+  transport_rounds: ProviderTransportRound[];
   files_changed: string[];
   content_snapshot_hash: string;
   diff_hash: string;
@@ -202,9 +241,11 @@ export interface EvidenceBundle {
   scope_violations: string[];
   privacy_violations: string[];
   secret_scan_summary: { outcome: "passed" | "failed" | "not_run"; findings: number; baseline_findings: number; new_findings: number };
-  usage_metrics: { input_tokens: number | null; output_tokens: number | null; reasoning_tokens: number | null };
+  usage_metrics: { input_tokens: number | null; output_tokens: number | null; reasoning_tokens: number | null; cached_input_tokens: number | null; cache_write_tokens: number | null; cache_hit_tokens: number | null; cache_miss_tokens: number | null };
   cost_metrics: { provider_reported_usd: number | null; estimated_list_usd: number | null; invoice_usd: number | null; chatgpt_quota: number | null };
+  pricing_catalog: { version: string; hash: string; currency: "USD"; source_urls: string[]; retrieved_at: string; effective_at: string; time_bands: PricingTimeBand[] } | null;
   wall_clock_time_ms: number;
+  stage_wall_clock_ms: { plan: number | null; execute: number | null; gate: number | null; review: number | null; repair: number | null; total: number };
   repair_count: number;
   remaining_risks: string[];
   redaction_notes: string[];
@@ -444,6 +485,79 @@ export interface UsageAvailability {
   inputTokens: boolean;
   outputTokens: boolean;
   reasoningTokens: boolean;
+  cacheHitTokens: boolean;
+  cacheMissTokens: boolean;
+}
+
+export interface ProviderBudgetState {
+  attempts_used: number;
+  provider_requests_used: number;
+  input_tokens_used: number;
+  output_tokens_used: number;
+  wall_clock_time_ms_used: number;
+  estimated_list_cost_usd: number;
+}
+
+export type PilotArm = "gpt_only" | "hybrid";
+export type HumanInterventionType = "manual_code_change" | "scope_change" | "provider_change" | "model_change" | "budget_change" | "egress_change" | "manual_resend" | "gate_skip";
+export type PilotRecommendation = "expand" | "simplify" | "stop";
+
+export interface PilotRunRecord {
+  version: 1;
+  task_id: string;
+  arm: PilotArm;
+  run_id: string;
+  base_fixture_hash: string;
+  task_package_hash: string;
+  route_binding_hash: string;
+  approval_hash: string;
+  execution_context_hash: string;
+  evidence_bundle_hash: string;
+  provider: string;
+  model: string | null;
+  endpoint_origin: string | null;
+  endpoint_path: string | null;
+  auth_alias: string | null;
+  first_pass_success: boolean;
+  final_acceptance: boolean;
+  visible_tests: { passed: number; failed: number; not_run: number };
+  hidden_tests: { passed: number; failed: number; not_run: number };
+  regression: boolean;
+  repair_count: number;
+  human_interventions: Array<{ type: HumanInterventionType; summary: string }>;
+  automated_success: boolean;
+  violations: { secret: number; scope: number; privacy: number; routing: number; main_workspace_pollution: number; unexplained_duplicate_requests: number };
+  ambiguity: { attempts: number; total_attempts: number; attempt_rate: number; requests: number; total_requests: number; request_rate: number };
+  usage_by_stage_model: Array<{ stage: Stage; provider: string; model: string | null; input_tokens: number | null; output_tokens: number | null; reasoning_tokens: number | null; cache_hit_tokens: number | null; cache_miss_tokens: number | null }>;
+  provider_http_request_count: number | null;
+  wall_clock_ms: { plan: number | null; execute: number | null; gate: number | null; review: number | null; repair: number | null; total: number };
+  costs: { provider_reported_usd: number | null; estimated_list_usd: number | null; invoice_usd: number | null; chatgpt_quota: number | null };
+  pricing_catalog: { version: string; hash: string; source_urls: string[]; time_bands: PricingTimeBand[] } | null;
+  core_metrics_unavailable: string[];
+  evidence_sufficient: boolean;
+  remaining_risks: string[];
+  recommendation: PilotRecommendation;
+  created_at: string;
+  record_hash: string;
+}
+
+export interface PilotPairReport {
+  version: 1;
+  task_id: string;
+  gpt_only_run_hash: string;
+  hybrid_run_hash: string;
+  same_base_fixture: boolean;
+  same_scope: boolean;
+  same_hidden_gate: boolean;
+  same_wall_budget: boolean;
+  same_acceptance_criteria: boolean;
+  hybrid_acceptance_not_lower: boolean;
+  cost_reduction_percent: number | null;
+  hybrid_latency_increase_percent: number | null;
+  expansion_blockers: string[];
+  recommendation: PilotRecommendation;
+  created_at: string;
+  report_hash: string;
 }
 
 export type RequestIdSource = "body" | "header" | "body_and_header" | "cli_event" | "local" | "not_available";
@@ -525,6 +639,7 @@ export interface RunState {
 
 export interface ProviderRequest {
   stage: Stage;
+  contractProvenance?: "canonical" | "legacy_bridge";
   route: RouteDecision;
   stablePrefix: string;
   projectSummary: string;
@@ -536,6 +651,7 @@ export interface ProviderRequest {
   routeBinding?: RouteBinding;
   qualityGate?: QualityGateRequest;
   tools?: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>;
+  budgetState?: ProviderBudgetState;
 }
 
 export interface ProviderResponse {
@@ -545,6 +661,9 @@ export interface ProviderResponse {
   model: string;
   usage: UsageMetrics;
   usageAvailability?: UsageAvailability;
+  providerReportedCostUsd?: number | null;
+  estimatedListCostUsd?: number | null;
+  transportRounds?: ProviderTransportRound[];
   routeEvidence?: ProviderRouteEvidence;
   structuredPatches?: StructuredPatchProposal[];
   raw?: unknown;

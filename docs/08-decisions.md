@@ -159,3 +159,31 @@
 - secret/diff：baseline finding 按规则与指纹多重集比较；未变化的既有 finding 允许生成已脱敏但可审查 diff，新增或重复增加失败关闭。大小上限按 raw bytes 在脱敏前执行，输出只保存 bounded/redacted diagnostics。
 - 完整性：QualityGateReport 完整绑定 request/base/plan/approval/isolation/worktree/policy/command set 与 pre/post snapshot，并带自校验 hash；consumer 必须验证 gate 顺序、pass 等式、artifact 和当前 worktree。EvidenceBundle 因增加这些必需摘要及 nullable usage，从 S1 合成 v1 显式升级为 v2，不静默接受旧 v1。
 - 边界：质量命令仍是受信项目进程，不是 OS sandbox；secret scan 是启发式；bundle 由 legacy bridge 投影，S7 full contract core 尚未接入。全部证据为 synthetic/mock 离线测试，不证明真实 API、provider identity 或 production readiness。
+
+## ADR-019：S7 使用单一 canonical core 与窄前台适配层
+
+- 日期：2026-08-24
+- 状态：接受
+- 决策：先稳定 `RouterCoreService` 与结构化 CLI，再在同一实例上增加六工具 STDIO MCP，最后增加 instruction-only repo skill。MCP/skill 不实现 policy、route、credential、filesystem、retry、attempt 或 evidence 安全逻辑；这些逻辑继续由 S1–S6 core primitives 统一执行。
+- 接口：`router.prepare` 只接收严格最小 TaskPackage，拒绝完整聊天、hidden reasoning 和未知字段；返回 exact compact approval summary。`router.execute` 绑定 `approval_summary_hash`，`router.review_evidence` 返回经校验的 bundle hash/reference/摘要，`router.finalize` 绑定当前 EvidenceBundle 并只记录前台 `PASS/BLOCKED`。
+- 传输：MVP 使用独立进程 STDIO MCP，不使用 App Server/SDK 重建主 Agent。结构化 CLI 是测试、恢复和诊断入口，与 MCP 读取相同外置状态。仓库提供 skill 和不含密钥的 policy/route 示例，但不写用户或项目 Codex MCP 注册配置。
+- Provenance：canonical 请求显式标记 `contract_provenance=canonical`；legacy bridge 继续保留既有固定预算兼容检查。共享 request fingerprint 和 route evidence 断言避免两条路径复制安全判断。
+- 边界：S7 finalize 不 repair、不 apply、不 commit；worktree 保持 retained。直接 STDIO mock 证明单会话控制链与 provider/config/auth sentinel 不变，不证明真实 Codex MCP 注册、真实 API/provider identity、DNS peer/proxy/TLS、private capability 或 production readiness。
+
+## ADR-020：S8 将 Final Review、Repair 与 Apply 分成三个显式授权边界
+
+- 日期：2026-08-24
+- 状态：接受
+- Review：foreground GPT 只可记录 `PASS | REPAIR_REQUIRED | BLOCKED`，并绑定当前 EvidenceBundle。PASS 只进入 `APPLY_PENDING`，不把质量门通过或 GPT review 等同于主 workspace 已修改。
+- Repair：最多一次 round 1 新 attempt；只复用冻结 TaskPackage、RouteBinding、ApprovalRecord、provider/model、预算、scope 与 content-hash egress。当前 runtime policy/route profile 或 approval summary 变化直接 BLOCKED，必须用新批准重新开始。
+- Apply：只接受显式调用；写前验证批准 main snapshot、初始 dirty overlap、当前 worktree/EvidenceBundle snapshot、目标 full-file preimage 与 reviewed postimage。复用 S4 原子 patch，不自动 stash、commit、merge 或 push；同 bundle duplicate apply 幂等。
+- 边界：MVP 继承 S4 单文件 UTF-8 replacement/create 限制。已持久化 PREPARED/APPLIED apply record，但 filesystem write 后、APPLIED checkpoint 前的 crash 仍保守 BLOCKED，未实现多文件事务或自动恢复。
+
+## ADR-021：S9 以同一 canonical core 的全 mock 控制链作为有限 Pilot 前置认证
+
+- 日期：2026-08-24
+- 状态：接受
+- 决策：S9 不新增 provider、权限或 live 路径；用临时 synthetic repo/state/worktree/MCP、mock auth/fetch/provider/reviewer/local gate 认证从 prepare 到 review/repair/apply/BLOCKED 的完整控制链。CLI 与 MCP 必须读取同一 core state，旧架构 live benchmark 不可替代该证据。
+- 预算：每个 canonical EXECUTE/REPAIR response 都必须在任何 patch apply 前复核累计成功 model attempts 和 provider-reported input/output usage。超预算 response 已可能产生供应商副作用，因此归为 `response_invalid → AMBIGUOUS/BLOCKED`，不自动重发。
+- 结论：S0–S9 通过只允许标记 `eligible for limited live Pilot`。真实 API、credential、Codex MCP 注册、私有数据外发、预算和 Pilot 指标仍需 S10 当次明确授权；不得称为 production ready。
+- 边界：mock route evidence 不证明 DNS/socket peer、proxy/TLS 或供应商账单；worktree/capability 不是 OS sandbox；private Direct capability、多文件 apply 与 write/APPLIED crash recovery 未扩展。

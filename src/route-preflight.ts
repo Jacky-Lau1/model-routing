@@ -1,4 +1,5 @@
 import { assertRouteBinding, createRouteBinding } from "./contracts.js";
+import { PRICING_CATALOG_HASH, PRICING_CATALOG_VERSION } from "./cost.js";
 import type { ExecutorCapabilityGrant, Provider, RouteBinding, RouteDecision } from "./types.js";
 
 export const DEEPSEEK_ADAPTER_ID = "deepseek-chat-direct";
@@ -28,17 +29,20 @@ export function buildLegacyRouteBinding(
     reasoning_mode: route.provider === "local" ? "local" as const : route.effort === "none" ? "disabled" as const : "enabled" as const,
     reasoning_effort: route.effort,
     request_budget: {
+      max_attempts: 2,
+      max_provider_requests: Math.max(1, 2 * (route.maxToolTurns + 1)),
       max_input_tokens: 64_000,
       max_output_tokens: Math.max(1, route.maxOutputTokens),
       max_tool_calls: route.maxToolTurns,
-      max_wall_time_ms: route.timeoutMs,
+      max_request_wall_time_ms: route.timeoutMs,
+      max_wall_time_ms: Math.max(route.timeoutMs, 2 * (route.maxToolTurns + 1) * route.timeoutMs),
       max_estimated_cost_usd: null,
       billing_mode: "unknown" as const,
     },
     read_scope: [...readScope], write_scope: [...writeScope],
   };
   if (route.provider === "deepseek") return freezeRouteBinding(createRouteBinding({
-    ...common, adapter_id: DEEPSEEK_ADAPTER_ID,
+    ...common, adapter_id: DEEPSEEK_ADAPTER_ID, pricing_catalog_version: PRICING_CATALOG_VERSION, pricing_catalog_hash: PRICING_CATALOG_HASH,
     endpoint_origin: DEEPSEEK_ENDPOINT_ORIGIN, endpoint_path: DEEPSEEK_ENDPOINT_PATH,
     wire_protocol: "chat_completions", auth_alias: deepSeekAuthAlias,
     network_scope: [DEEPSEEK_ENDPOINT_ORIGIN],
@@ -47,13 +51,13 @@ export function buildLegacyRouteBinding(
     command_scope: deepSeekAuthAlias === DEEPSEEK_DPAPI_AUTH_ALIAS ? ["powershell-dpapi-decrypt"] : [],
   }));
   if (route.provider === "openai-codex") return freezeRouteBinding(createRouteBinding({
-    ...common, adapter_id: CODEX_ADAPTER_ID,
+    ...common, adapter_id: CODEX_ADAPTER_ID, pricing_catalog_version: PRICING_CATALOG_VERSION, pricing_catalog_hash: PRICING_CATALOG_HASH,
     endpoint_origin: OPENAI_ENDPOINT_ORIGIN, endpoint_path: OPENAI_ENDPOINT_PATH,
     wire_protocol: "responses", auth_alias: CODEX_AUTH_ALIAS,
     network_scope: [OPENAI_ENDPOINT_ORIGIN], environment_scope: ["CODEX_HOME"], command_scope: ["codex-cli"],
   }));
   return freezeRouteBinding(createRouteBinding({
-    ...common, adapter_id: LOCAL_ADAPTER_ID,
+    ...common, adapter_id: LOCAL_ADAPTER_ID, pricing_catalog_version: null, pricing_catalog_hash: null,
     endpoint_origin: "local://quality-gate", endpoint_path: "/validate",
     wire_protocol: "local", auth_alias: null,
     network_scope: [], environment_scope: [], command_scope: [],
@@ -66,17 +70,17 @@ export function freezeRouteBinding(binding: RouteBinding): RouteBinding {
   return createRouteBinding(body);
 }
 
-export function preflightRouteBinding(binding: RouteBinding, route: RouteDecision, adapterId = adapterIdFor(route.provider)): RoutePreflightResult {
+export function preflightRouteBinding(binding: RouteBinding, route: RouteDecision, adapterId = adapterIdFor(route.provider), contractProvenance: "canonical" | "legacy_bridge" = "legacy_bridge"): RoutePreflightResult {
   assertRouteBinding(binding);
   if (binding.provider_id !== route.provider || binding.model_id !== route.model) throw new Error("RouteBinding provider/model does not match the approved route");
   if (binding.adapter_id !== adapterId) throw new Error("RouteBinding adapter does not match the selected adapter");
   if (binding.reasoning_effort !== route.effort || binding.reasoning_mode !== expectedReasoningMode(route)) throw new Error("RouteBinding reasoning mode does not match the approved route");
   if (binding.request_budget.max_output_tokens !== Math.max(1, route.maxOutputTokens)
-    || binding.request_budget.max_input_tokens !== 64_000
     || binding.request_budget.max_tool_calls !== route.maxToolTurns
-    || binding.request_budget.max_wall_time_ms !== route.timeoutMs
+    || binding.request_budget.max_request_wall_time_ms !== route.timeoutMs) throw new Error("RouteBinding request budget does not match the approved route");
+  if (contractProvenance === "legacy_bridge" && (binding.request_budget.max_input_tokens !== 64_000
     || binding.request_budget.max_estimated_cost_usd !== null
-    || binding.request_budget.billing_mode !== "unknown") throw new Error("RouteBinding request budget does not match the approved route");
+    || binding.request_budget.billing_mode !== "unknown")) throw new Error("Legacy RouteBinding request budget does not match the approved route");
   if (route.provider === "deepseek") {
     if (!/^deepseek-v4-(?:flash|pro)$/.test(binding.model_id)) throw new Error("DeepSeek RouteBinding model family is invalid");
     exact(binding.endpoint_origin, DEEPSEEK_ENDPOINT_ORIGIN, "DeepSeek endpoint origin");

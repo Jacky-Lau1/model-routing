@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "provider_id": "deepseek",
+  "adapter_id": "deepseek-chat-direct",
+  "model_id": "deepseek-v4-flash",
+  "endpoint_origin": "https://api.deepseek.com",
+  "endpoint_path": "/chat/completions",
+  "wire_protocol": "chat_completions",
+  "auth_alias": "deepseek-dpapi",
+  "reasoning_mode": "enabled",
+  "reasoning_effort": "high",
+  "pricing_catalog_version": "2026-08-24.1",
+  "pricing_catalog_hash": "2266ac8fc7a6a89c4ec37c7a3f9d1bb5c885ad27ada72a04217b996d25b69e74",
+  "request_budget": { "max_attempts": 2, "max_provider_requests": 6, "max_input_tokens": 4000, "max_output_tokens": 1000, "max_tool_calls": 2, "max_request_wall_time_ms": 30000, "max_wall_time_ms": 300000, "max_estimated_cost_usd": 0.00308, "billing_mode": "prepaid" },
+  "read_scope": ["benchmark/fixtures/simple-sum/README.md", "benchmark/fixtures/simple-sum/src/sum.mjs", "benchmark/fixtures/simple-sum/test/sum.test.mjs"],
+  "write_scope": ["benchmark/fixtures/simple-sum/src/sum.mjs"],
+  "network_scope": ["https://api.deepseek.com"],
+  "environment_scope": ["CODEX_ROUTER_SECRET_PATH", "SystemRoot", "WINDIR", "TEMP", "TMP"],
+  "command_scope": ["powershell-dpapi-decrypt"],
+  "route_binding_hash": "2c3600fccf4d4fed24e680ff5211311a112ad35e6ff406ad326943f7976be3e6"
+}

@@ -1,4 +1,4 @@
-# 13｜继续研发交接（S6 更新，2026-08-23）
+# 13｜继续研发交接（S9 更新，2026-08-24）
 
 > 本文是历史实现到 Orchestrator-first 的迁移交接。当前阶段基线见 `docs/16-orchestrator-first-implementation-plan.md`，逐阶段入口见 `docs/17-orchestrator-first-stage-handoffs.md`。
 
@@ -9,7 +9,7 @@
 - 默认安装器不再创建 native DeepSeek、OpenAI Codex 或 Restore OpenAI 快捷方式。
 - native provider switch 与 profile 安装脚本已移到 `scripts/deprecated-experimental/native-codex/`，仅供协议兼容性考古，不受支持、不执行。
 - `route live-benchmark` 仍是显式命令；安装、默认检查和 S0-S9 测试不得触发。
-- 历史 S0 交接时，TypeScript Orchestrator 主体仍是整改前 Phase 0/1。当前 S1–S6 已完成；S7–S9 的 GPT 前台、apply 与 E2E 尚未开始，现状以 `docs/16`、`docs/17` 和 `docs/23` 为准。
+- 历史 S0 交接时，TypeScript Orchestrator 主体仍是整改前 Phase 0/1。当前 S1–S9 已完成 mock/synthetic 阶段门；现状以 `docs/16`、`docs/17`、`docs/25` 和 `docs/26` 为准。
 
 ## S0 的默认入口
 
@@ -36,7 +36,7 @@ deprecated experimental 目录中的脚本可能下载外部内容、写 Codex p
 
 ## 历史下一阶段
 
-本节保留 S0 完成时的交接语义：当时下一阶段是 S1，且只实施 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和 privacy/policy schema 基线。当前 S1–S6 已完成，下一阶段为 S7；不得再使用本节作为当前启动指令。
+本节保留 S0 完成时的交接语义：当时下一阶段是 S1，且只实施 TaskPackage、RouteBinding、ExecutionContext、ApprovalRecord、AttemptRecord、EvidenceBundle 和 privacy/policy schema 基线。当前 S1–S9 已完成；S10 只有在当次明确授权后才可启动，不得再使用本节作为当前启动指令。
 
 ## 先读哪些文件
 
@@ -46,8 +46,8 @@ deprecated experimental 目录中的脚本可能下载外部内容、写 Codex p
 4. `docs/08-decisions.md`
 5. `README.md`、`ROADMAP.md`、`CHANGELOG.md`
 6. `logs/decision-log.md`、`logs/routing-validation-log.md`
-7. `docs/18-s1-data-contracts.md` 至 `docs/23-s6-quality-evidence.md`
-8. S7 涉及的 core service、CLI、STDIO MCP 与 thin skill 源码/schema/mock 测试
+7. `docs/18-s1-data-contracts.md` 至 `docs/26-s9-zero-cost-e2e-certification.md`
+8. S9 涉及的 mock provider、临时 repo、crash/mismatch/privacy/worktree 端到端套件
 
 ## S5 完成边界
 
@@ -59,4 +59,26 @@ S5 把 canonical/legacy RouteBinding 深度冻结，并将 legacy plan、approva
 
 S6 用固定 policy command catalog 顺序执行 local gates；snapshot 先验证物理 containment，secret baseline 用多重集比较，raw diff 在脱敏前执行 ceiling，Git 只读取 index/status/diff。QualityGateReport 完整绑定批准请求、pre/post snapshot、artifact 和 gate 顺序并带 self hash；EvidenceBundle v2 记录 attempts、route evidence、测试诊断、nullable usage、分层 cost 与剩余风险。
 
-TypeScript、S6 定向 7/7 files 118/118 tests、全量 19/19 files 323/323 tests 通过。全部为 synthetic repo/mock provider/credential；未读取真实配置/auth/DPAPI/credential-bearing env 值（最终文档审计仅有一次非敏感 `USERPROFILE` locator 意外展开，详见 `docs/23`），未运行真实 API、live benchmark 或费用操作。受信质量命令不是 OS sandbox，legacy bridge 和启发式 secret scan 仍作为风险保留；S7 尚未开始。
+TypeScript、S6 定向 7/7 files 118/118 tests、全量 19/19 files 323/323 tests 通过。全部为 synthetic repo/mock provider/credential；未读取真实配置/auth/DPAPI/credential-bearing env 值（最终文档审计仅有一次非敏感 `USERPROFILE` locator 意外展开，详见 `docs/23`），未运行真实 API、live benchmark 或费用操作。受信质量命令不是 OS sandbox，legacy bridge 和启发式 secret scan 仍作为风险保留；这是 S6 完成时的边界。
+
+## S7 完成边界
+
+S7 用 canonical `RouterCoreService` 接通 TaskPackage、EffectivePolicy、RouteBinding、ExecutionContext、ApprovalRecord、S2 attempt/worktree、S4 SafeExecutor、S6 quality/EvidenceBundle。结构化 CLI、六工具 STDIO MCP 和 repo thin skill 只调用该 core；execute 绑定 exact approval summary hash，foreground finalize 绑定当前 EvidenceBundle hash且不 apply 主 workspace。
+
+TypeScript、S7/共享安全定向 7/7 files 113/113 tests、全量 23/23 files 335/335 tests 通过。单一 synthetic STDIO 会话只发送一次 mock provider 请求，主 workspace 与 provider/config/auth sentinel hash 不变。未注册真实 MCP、未写 Codex 配置、未读真实 auth/credential-bearing env、未调用 API/live benchmark。真实 Codex tool discovery、private capability、OS sandbox、真实 provider/peer、S8 repair/apply 仍未验证或未实现。
+
+## S8 完成边界
+
+S8 将 foreground finalize 扩展为严格三态；PASS 只进入 `APPLY_PENDING`。`router.repair` 只接受当前 REPAIR_REQUIRED EvidenceBundle 与原 approval summary，同一批准下最多创建一个 round 1 attempt；runtime provider/model/budget/scope/privacy/egress 变化均 BLOCKED。`router.apply` 显式复核 main snapshot、dirty overlap、当前 bundle/worktree snapshot 与单一目标 preimage/postimage，成功只写未提交主 workspace，不 commit/merge/push，duplicate apply 幂等。
+
+TypeScript、S8 6/6 tests、拆分全量 24 files 342/342 tests 通过。全部为 synthetic repo/mock reviewer/provider；未注册真实 MCP、未读真实配置/auth/env、未联网或产生费用。S8 apply 当前只支持 S4 单文件 UTF-8 replacement/create；多文件、rename/delete/binary 与 write/APPLIED checkpoint 间 crash recovery 仍留待后续设计。
+
+## S9 完成边界
+
+S9 新增 26 个全 mock E2E 场景，完整覆盖 privacy/egress、Flash/Pro 与 route mismatch、provider outcome、三 attempt checkpoint crash、ambiguous/no-resend、duplicate/concurrent、scope/usage、secret/quality、repair、apply conflict、redaction、cleanup 及 CLI/MCP 同状态。矩阵修复首次 EXECUTE 未在 patch 前复核累计 token usage 的缺陷；没有扩大 provider、scope、预算或外发。
+
+TypeScript、diff check、S8 6/6、S9 26/26、全量 25 files 368/368 与外置临时 emit build 均通过。真实 API 请求和费用为零；没有读取真实 config/auth/credential-bearing env，没有注册 MCP 或运行 live benchmark。当前状态只为 `eligible for limited live Pilot`；S10 仍需展示公开/synthetic task、provider/model/endpoint/auth、真实 MCP/config 变更、调用/费用上限、外发 hash 和停止条件并取得当次明确“运行”授权。
+
+## S10 preflight 后续边界
+
+继续前先读 `docs/27-s10-preflight-remediation.md` 与 `docs/28-s10-gpt-only-baseline-adr.md`。当前状态为 BLOCKED：离线成本/轮次/预算、Pilot schema 和临时 MCP discovery 已实现，但真实 MCP 注册/当前会话 tool discovery、credential 独立授权及公平 GPT-only host telemetry 尚未满足。不得把单臂 smoke、MCP 模板或本轮 mock 证据写成 S10 通过。

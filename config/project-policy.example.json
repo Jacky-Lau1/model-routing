@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "policy_id": "demo-project-policy",
+  "egress_policy": {
+    "mode": "allow",
+    "providers": ["deepseek"],
+    "paths": ["src/example.ts", "tests/example.test.ts"],
+    "content_hashes": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+  },
+  "read_scope": ["src/example.ts", "tests/example.test.ts"],
+  "write_scope": ["src/example.ts", "tests/example.test.ts"],
+  "budget_ceiling": {
+    "max_attempts": 2,
+    "max_provider_requests": 6,
+    "max_input_tokens": 4000,
+    "max_output_tokens": 1000,
+    "max_tool_calls": 2,
+    "max_request_wall_time_ms": 30000,
+    "max_wall_time_ms": 300000,
+    "max_estimated_cost_usd": 0.25,
+    "billing_mode": "prepaid"
+  },
+  "policy_hash": "9595e3d35d0c551e8340f809a50ee7b1993f620e12d3b5a6b115777273fe4fc4"
+}

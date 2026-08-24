@@ -1,0 +1,9 @@
+# Sanitized preview only. Generate the exact local block with
+# buildMcpRegistrationPreview(...) before requesting configuration approval.
+[mcp_servers.codex_router]
+command = "C:\\CodexRouter\\runtime\\node.exe"
+args = ["--import", "tsx", "C:\\CodexRouter\\repository\\src\\mcp.ts", "--project", "C:\\CodexRouter\\pilot\\fixture-repo", "--state-root", "C:\\CodexRouter\\pilot\\state", "--user-policy", "C:\\CodexRouter\\repository\\config\\s10a-user-policy.template.json", "--project-policy", "C:\\CodexRouter\\repository\\config\\s10a-project-policy.template.json", "--route-profile", "C:\\CodexRouter\\repository\\config\\s10a-route-profile.template.json"]
+cwd = "C:\\CodexRouter\\repository"
+enabled_tools = ["router.prepare", "router.execute", "router.status", "router.abort", "router.review_evidence", "router.finalize", "router.repair", "router.apply"]
+startup_timeout_sec = 20
+tool_timeout_sec = 300

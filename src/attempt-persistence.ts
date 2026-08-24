@@ -246,6 +246,10 @@ export function assertAttemptStateInvariant(attempt: AttemptRecord): void {
   if (attempt.status === "FAILED_BEFORE_SEND" && (hasSend || !hasCompletion || attempt.failure_class !== "local_preflight" || !attempt.redacted_error)) throw new Error("FAILED_BEFORE_SEND attempt fields are inconsistent");
   if (attempt.status === "AMBIGUOUS" && (!hasSend || !hasCompletion || !["transport_unknown", "response_invalid", "provider_rejected"].includes(attempt.failure_class) || !attempt.redacted_error)) throw new Error("AMBIGUOUS attempt fields are inconsistent");
   if (attempt.status === "CANCELLED" && (!hasCompletion || attempt.failure_class !== "cancelled")) throw new Error("CANCELLED attempt fields are inconsistent");
+  if (["PREPARED", "FAILED_BEFORE_SEND"].includes(attempt.status) && attempt.transport_rounds.length !== 0) throw new Error(`${attempt.status} cannot contain provider transport rounds`);
+  if (attempt.transport_rounds.some((round, index) => round.sequence !== index)) throw new Error("Attempt transport-round sequence is invalid");
+  if (attempt.provider_reported_cost_usd !== null && attempt.transport_rounds.some(round => round.provider_reported_cost_usd === null)) throw new Error("Attempt provider-reported cost is not complete across rounds");
+  if (attempt.estimated_list_cost_usd !== null && attempt.transport_rounds.some(round => round.estimated_list_cost_usd === null)) throw new Error("Attempt list-price cost is not complete across rounds");
 }
 
 function assertDurableAttempt(value: unknown): asserts value is AttemptRecord { assertAttemptRecord(value); assertAttemptStateInvariant(value); }

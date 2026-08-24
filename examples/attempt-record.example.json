@@ -14,5 +14,8 @@
   "response_model": null,
   "response_origin": null,
   "usage": null,
+  "transport_rounds": [],
+  "provider_reported_cost_usd": null,
+  "estimated_list_cost_usd": null,
   "redacted_error": null
 }

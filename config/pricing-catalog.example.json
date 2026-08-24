@@ -1,0 +1,27 @@
+{
+  "version": "2026-08-24.1",
+  "currency": "USD",
+  "retrieved_at": "2026-08-24T03:30:00.000Z",
+  "valid_until": "2026-09-23T03:30:00.000Z",
+  "entries": [
+    {
+      "provider": "openai-codex", "model": "gpt-5.6-terra", "effective_at": "2026-08-24T03:30:00.000Z", "source_url": "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+      "time_bands": [{ "name": "standard", "utc_rule": "always", "rates": { "input_cache_hit_usd_per_million": 0.2, "input_cache_miss_usd_per_million": 2, "output_usd_per_million": 12 } }]
+    },
+    {
+      "provider": "deepseek", "model": "deepseek-v4-flash", "effective_at": "2026-08-16T16:00:00.000Z", "source_url": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "time_bands": [
+        { "name": "peak", "utc_rule": "weekday_0100_0400_or_0600_1000", "rates": { "input_cache_hit_usd_per_million": 0.014, "input_cache_miss_usd_per_million": 0.44, "output_usd_per_million": 1.32 } },
+        { "name": "off_peak", "utc_rule": "otherwise", "rates": { "input_cache_hit_usd_per_million": 0.007, "input_cache_miss_usd_per_million": 0.22, "output_usd_per_million": 0.66 } }
+      ]
+    },
+    {
+      "provider": "deepseek", "model": "deepseek-v4-pro", "effective_at": "2026-08-16T16:00:00.000Z", "source_url": "https://api-docs.deepseek.com/quick_start/pricing/",
+      "time_bands": [
+        { "name": "peak", "utc_rule": "weekday_0100_0400_or_0600_1000", "rates": { "input_cache_hit_usd_per_million": 0.044, "input_cache_miss_usd_per_million": 1.32, "output_usd_per_million": 3.96 } },
+        { "name": "off_peak", "utc_rule": "otherwise", "rates": { "input_cache_hit_usd_per_million": 0.022, "input_cache_miss_usd_per_million": 0.66, "output_usd_per_million": 1.98 } }
+      ]
+    }
+  ],
+  "catalog_hash": "2266ac8fc7a6a89c4ec37c7a3f9d1bb5c885ad27ada72a04217b996d25b69e74"
+}

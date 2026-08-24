@@ -14,4 +14,10 @@ describe("state machine", () => {
     expect(canTransition("EXECUTING", "BLOCKED")).toBe(true);
     expect(() => assertTransition("PASSED", "EXECUTING")).toThrow();
   });
+
+  it("requires explicit APPLY_PENDING between foreground PASS and PASSED", () => {
+    expect(canTransition("REVIEW_PENDING", "APPLY_PENDING")).toBe(true);
+    expect(canTransition("REVIEW_PENDING", "PASSED")).toBe(false);
+    expect(canTransition("APPLY_PENDING", "PASSED")).toBe(true);
+  });
 });

@@ -17,7 +17,7 @@ function workflow(): WorkflowRecord {
 }
 
 function prepared(): AttemptRecord {
-  return { version: 1, attempt_id: "attempt-1", run_id: "run-1", stage: "EXECUTE", round: 0, request_fingerprint: stableHash("request"), status: "PREPARED", prepared_at: now, send_started_at: null, completed_at: null, failure_class: "none", provider_request_id: null, response_model: null, response_origin: null, usage: null, redacted_error: null };
+  return { version: 1, attempt_id: "attempt-1", run_id: "run-1", stage: "EXECUTE", round: 0, request_fingerprint: stableHash("request"), status: "PREPARED", prepared_at: now, send_started_at: null, completed_at: null, failure_class: "none", provider_request_id: null, response_model: null, response_origin: null, usage: null, transport_rounds: [], provider_reported_cost_usd: null, estimated_list_cost_usd: null, redacted_error: null };
 }
 
 describe("atomic and redacted attempt persistence", () => {

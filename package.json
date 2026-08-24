@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "route": "dist/src/cli.js" },
+  "bin": { "route": "dist/src/cli.js", "router-mcp": "dist/src/mcp.js" },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "check": "tsc -p tsconfig.json && vitest run",
     "route": "tsx src/cli.ts",
+    "mcp": "tsx src/mcp.ts",
     "terminal": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/router-terminal.ps1"
   },
   "dependencies": { "commander": "^14.0.0" },

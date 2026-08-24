@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { assertApprovalRecord, assertAttemptRecord, assertEvidenceBundle, assertExecutionContext, assertRouteBinding, assertTaskPackage } from "../src/contracts.js";
 import { assertQualityGatePolicy } from "../src/quality-gate.js";
+import { resolveEffectivePolicy } from "../src/policy.js";
 
 const root = process.cwd();
 
@@ -54,7 +55,9 @@ describe("S1 JSON Schema artifacts", () => {
   it("keeps every synthetic JSON example strict and hash-valid", async () => {
     const cases: Array<[string, (value: unknown) => void]> = [
       ["task-package.example.json", assertTaskPackage], ["task-packet.example.json", assertTaskPackage],
+      ["s10a-task-package.template.json", assertTaskPackage],
       ["route-binding.example.json", assertRouteBinding], ["execution-context.example.json", assertExecutionContext],
+      ["s10a-route-binding.template.json", assertRouteBinding],
       ["approval-record.example.json", assertApprovalRecord], ["attempt-record.example.json", assertAttemptRecord],
       ["evidence-bundle.example.json", assertEvidenceBundle], ["run-report.example.json", assertEvidenceBundle],
     ];
@@ -62,5 +65,17 @@ describe("S1 JSON Schema artifacts", () => {
       const example = JSON.parse(await readFile(path.join(root, "examples", file), "utf8"));
       expect(() => validate(example), file).not.toThrow();
     }
+  });
+
+  it("keeps the versioned Pilot report JSON Schema strict", async () => {
+    const schema = JSON.parse(await readFile(path.join(root, "config/pilot-report.schema.json"), "utf8")) as any;
+    expect(schema.oneOf).toHaveLength(2); expect(schema.$defs.PilotRunRecord.additionalProperties).toBe(false); expect(schema.$defs.PilotPairReport.additionalProperties).toBe(false);
+    expect(schema.$defs.PilotRunRecord.required).toContain("provider_http_request_count"); expect(schema.$defs.PilotRunRecord.required).toContain("core_metrics_unavailable");
+  });
+
+  it("keeps the pending S10a policy pair hash-valid and narrowly intersected", async () => {
+    const user = JSON.parse(await readFile(path.join(root, "config/s10a-user-policy.template.json"), "utf8")); const project = JSON.parse(await readFile(path.join(root, "config/s10a-project-policy.template.json"), "utf8"));
+    const effective = resolveEffectivePolicy(user, project);
+    expect(effective.write_scope).toEqual(["benchmark/fixtures/simple-sum/src/sum.mjs"]); expect(effective.budget_ceiling).toMatchObject({ max_attempts: 2, max_provider_requests: 6, max_estimated_cost_usd: 0.00308 });
   });
 });

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "policy_id": "pending-s10a-project-policy",
+  "egress_policy": { "mode": "allow", "providers": ["deepseek"], "paths": ["benchmark/fixtures/simple-sum/README.md", "benchmark/fixtures/simple-sum/src/sum.mjs", "benchmark/fixtures/simple-sum/test/sum.test.mjs"], "content_hashes": ["810be53b24d0da3a0cd18485255e11d551a030e41de829f78f324dd28ed2fb24", "008d1c89ee6a71bc35e86f4c1347d99b3e5846f3debbffda96c08de0b53e574d", "2c6ae0e20a821a1bde588ef1aaba1c98f444ba00e905cbd2d4716a6878a98833"] },
+  "read_scope": ["benchmark/fixtures/simple-sum/README.md", "benchmark/fixtures/simple-sum/src/sum.mjs", "benchmark/fixtures/simple-sum/test/sum.test.mjs"],
+  "write_scope": ["benchmark/fixtures/simple-sum/src/sum.mjs"],
+  "budget_ceiling": { "max_attempts": 2, "max_provider_requests": 6, "max_input_tokens": 4000, "max_output_tokens": 1000, "max_tool_calls": 2, "max_request_wall_time_ms": 30000, "max_wall_time_ms": 300000, "max_estimated_cost_usd": 0.00308, "billing_mode": "prepaid" },
+  "policy_hash": "67e2da4a9d9d754cab75215202fbc9a722f531cafec98aa0399719515cf5ebb2"
+}

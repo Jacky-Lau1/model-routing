@@ -6,6 +6,27 @@
 
 ### Added
 
+- 三部分 Agent Team 闭环入口与独立可复制 Prompt：离线工程闭环、真实链路/降费证明、日常能力硬化/发布验收；Part 2 固定以同质量下总可审计成本下降至少 30% 为硬门。
+- 当前阅读路径收敛为 README → ROADMAP → docs/16 → docs/17 → 当前 Part Prompt；S1–S9 文档保留为技术规格/证据，不再要求每个新 agent 重复全读。
+
+- S10 前置整改：EvidenceBundle v3 与 per-transport-round usage/cache/request/wall/cost 证据，versioned peak/off-peak pricing catalog 及 RouteBinding approval 绑定，逐轮 pre-send/response 后累计预算失败关闭。
+- 版本化 Pilot run/pair schema、human intervention taxonomy、30% cost/quality/safety 固定决策门与 tamper/replay 测试；foreground GPT 核心 telemetry 不可得时明确 `null` 并停止扩展。
+- 无真实配置写入的 Codex STDIO MCP 注册预览、进程环境 allowlist、临时 Codex-home `tools/list` discovery 测试、exact S10a TaskPackage/RouteBinding/policy 模板与 GPT-only ADR。
+
+- S9 零费用端到端认证套件：临时 synthetic repo/state/worktree/MCP、mock auth/fetch/provider/reviewer/local command，覆盖 privacy、Flash/Pro 与 route mismatch、provider/crash/ambiguous、duplicate、scope/budget、secret/quality、repair/apply、redaction 和 cleanup；26/26 定向、25 files 368/368 全量通过。
+- S9 专项证据文档 `docs/26-s9-zero-cost-e2e-certification.md`；S0–S9 完成后状态仅提升为 `eligible for limited live Pilot`，S10 真实运行仍需当次明确授权。
+
+- S8 foreground Final Review 严格三态 `PASS | REPAIR_REQUIRED | BLOCKED`；PASS 只进入 `APPLY_PENDING`，不自动写主 workspace。
+- 一次 controlled repair：复用原 TaskPackage、RouteBinding、ApprovalRecord、provider/model、预算、scope 与 content-hash egress，持久化独立 round/attempt 并生成新 EvidenceBundle；任何 binding 变化失败关闭并要求新审批。
+- 显式 `router.apply` CLI/MCP：apply 前复核 main snapshot、dirty overlap、当前 bundle/worktree snapshot、目标 TaskPackage preimage 与 reviewed postimage；成功只留下未提交 workspace edit，不 commit、merge 或 push，重复 apply 幂等返回。
+- S8 mock reviewer/synthetic repo 测试覆盖 review unavailable、repair 成功/失败、scope/approval 变化、main workspace 漂移、预存 dirty target 与 duplicate apply；专项文档 `docs/25-s8-final-review-repair-apply.md`。
+
+- S7 canonical `RouterCoreService` 与外置原子状态：最小 TaskPackage 经 user/project policy 交集生成 immutable RouteBinding、ExecutionContext、ApprovalRecord，批准绑定 compact summary hash。
+- 结构化 `route router prepare/execute/status/abort/review-evidence/finalize` CLI、同核心的六工具 newline-delimited JSON-RPC STDIO MCP，以及只说明调用顺序、不复制安全判断的 `.agents/skills/codex-router/SKILL.md`。
+- S7 canonical provider/request evidence provenance、EvidenceBundle 引用与前台 final review hash 绑定；finalize 只记录 `PASS/BLOCKED`，保留隔离 worktree，不 apply 主 workspace。
+- S7 mock/synthetic 测试覆盖单 GPT 前台会话全流程、exact approval/evidence hash、幂等单发送/finalize、终态保护、abort、private capability fail-closed、chat-shaped extra field 拒绝、legacy fingerprint 兼容、结构化 CLI 持久状态等价和 provider/config/auth sentinel 不变；全量 23/23 files、335/335 tests。
+- S7 专项证据文档 `docs/24-s7-foreground-interface.md` 与不含密钥的 user/project policy、route profile 示例。
+
 - S6 固定命令目录与顺序化 Local Quality Gate：物理 scope/forbidden path、baseline-aware secret scan、raw diff sanity、check-only 命令和最终 freeze。
 - 外置 content-addressed diff artifact、完整 request-bound/self-hashed QualityGateReport，以及带 attempt/route/gate/usage/cost/risk 摘要的 EvidenceBundle v2。
 - S6 synthetic 攻击与生产 runner 回归，覆盖 symlink 越界、Git index flags/lazy-fetch、baseline secret、raw-size redaction bypass、artifact mutation/oversize/final forbidden refresh、report replay/tamper、总 wall budget、production timeout/overflow 进程树终止和 usage unavailable。
@@ -47,6 +68,10 @@
 
 ### Changed
 
+- canonical EXECUTE 与 REPAIR 现在都在任何 structured patch apply 前核对累计 provider-reported input/output usage 和 attempt budget；首次执行超预算进入 `response_invalid → AMBIGUOUS/BLOCKED`，不会写 worktree 或自动重发。
+
+- provider request fingerprint 与 route evidence 断言收敛为 core/legacy 共用实现；route preflight 显式区分 `canonical` 与 `legacy_bridge` provenance，旧路径预算语义保持不变。
+- Attempt executor 增加共享执行锁保护的 awaiting-approval 初始化、foreground final review 与 abort primitive，供 canonical core 使用且不复制发送/恢复安全逻辑。
 - 质量门 Git 证据改为只读 `git ls-files --stage -z`，不再使用会写共享 object store 的 `git write-tree`；raw diff 在脱敏前执行 byte ceiling。
 - 命令证据增加 bounded/redacted diagnostics 与 timeout/overflow 标记；未变化的 baseline secret 不再阻断可审查的脱敏 diff，新出现或重复增加的 finding 仍失败关闭。
 - EvidenceBundle 从 S1 合成基线 v1 明确升级为 v2；usage 不可得使用 `null`，不再伪装为数值零。

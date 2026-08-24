@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { classifyTask } from "../src/classifier.js";
+import { stableHash } from "../src/canonical.js";
 import { createRouteBinding } from "../src/contracts.js";
 import { decideRoute } from "../src/policy.js";
+import { providerRequestFingerprint } from "../src/provider-evidence.js";
 import { RoutingProviderAdapter } from "../src/providers/routing.js";
 import {
   buildLegacyRouteBinding, DEEPSEEK_ADAPTER_ID, DEEPSEEK_ENDPOINT_ORIGIN, DEEPSEEK_ENDPOINT_PATH,
@@ -27,6 +29,22 @@ describe("S5 immutable route preflight", () => {
     const persisted = JSON.parse(JSON.stringify(base)) as RouteBinding; const frozen = freezeRouteBinding(persisted);
     persisted.read_scope[0] = "src/other.ts";
     expect(frozen.read_scope).toEqual(["src/a.ts"]); expect(() => { frozen.write_scope[0] = "src/other.ts"; }).toThrow();
+  });
+
+  it("keeps legacy fixed budget checks while accepting canonical input/cost/billing values already bound by TaskPackage and policy", () => {
+    const canonical = rebuild(base, { request_budget: { ...base.request_budget, max_input_tokens: 4_000, max_estimated_cost_usd: 0.25, billing_mode: "prepaid" } });
+    expect(() => preflightRouteBinding(canonical, route, DEEPSEEK_ADAPTER_ID)).toThrow(/Legacy.*budget/);
+    expect(preflightRouteBinding(canonical, route, DEEPSEEK_ADAPTER_ID, "canonical").binding.request_budget).toMatchObject({ max_input_tokens: 4_000, max_estimated_cost_usd: 0.25, billing_mode: "prepaid" });
+  });
+
+  it("preserves the legacy attempt fingerprint while domain-separating canonical requests", () => {
+    const legacyBody = {
+      stage: request.stage, route: request.route, stable_prefix: request.stablePrefix, project_summary: request.projectSummary,
+      dynamic_input: request.dynamicInput, sensitivity: request.sensitivity, allowed_files: [], route_binding: request.routeBinding,
+      executor_capabilities: null, quality_gate: null, tools: [],
+    };
+    expect(providerRequestFingerprint(request)).toBe(stableHash(legacyBody));
+    expect(providerRequestFingerprint({ ...request, contractProvenance: "canonical" })).toBe(stableHash({ ...legacyBody, contract_provenance: "canonical" }));
   });
 
   it.each([

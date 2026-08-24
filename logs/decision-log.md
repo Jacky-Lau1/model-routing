@@ -108,3 +108,48 @@
 - 验证：TypeScript `--noEmit`；S6 定向 7/7 files、118/118 tests；全量 19/19 files、323/323 tests；`git diff --check`、脱敏、范围和用户产物检查通过。全部为 synthetic/mock 离线证据。
 - 边界：trusted project command 不是 OS sandbox；secret scan 是启发式；artifact identity 校验不替代 handle-relative sandbox；真实 API/provider route/DNS peer/proxy/TLS/usage/cost 未验证。
 - 当前状态：S6 离线阶段门通过；S7 尚未开始。
+
+## 2026-08-24｜S7 canonical core、窄 STDIO MCP 与 thin skill
+
+- 顺序：先实现 `RouterCoreService` 和结构化 CLI，再让 STDIO MCP 调用同一 core，最后加入 instruction-only repo skill；没有引入 App Server/SDK，也没有修改 Desktop provider。
+- 合同：prepare 只接收严格 TaskPackage；user/project policy 交集、RouteBinding、ExecutionContext、ApprovalRecord、worktree、attempt、安全执行器、质量门和 EvidenceBundle 仍由核心负责。execute 绑定 compact summary hash，final review 绑定当前 bundle hash。
+- 传输：MCP 只暴露 `router.prepare/execute/status/abort/review_evidence/finalize`，返回 compact structured content。CLI 是同状态的恢复入口。skill 不复制安全判断，也不请求完整聊天、hidden reasoning、credential 或未批准内容。
+- 配置：仅添加 repo skill 与不含密钥的 JSON 示例；未创建或修改 `.codex/config.toml`，未注册真实 MCP，未读取真实 Codex provider/config/auth 或 credential-bearing environment。
+- 验证：TypeScript `--noEmit`；定向 7/7 files、113/113 tests；全量 23/23 files、335/335 tests。单一 synthetic STDIO client 全流程只产生一次 mock provider send，main workspace 与 synthetic provider/config/auth sentinel hash 不变。
+- 边界：阶段门仅按 mock/synthetic 离线定义通过。真实 Codex MCP 调用、真实 provider route/peer/usage/cost、private capability、OS sandbox、S8 repair/apply 均未验证或未实现。
+- 当前状态：S7 离线阶段门通过；S8 可在独立会话按授权开始。
+
+## 2026-08-24｜S8 三态 review、单次 repair 与显式 apply
+
+- 决策：foreground GPT final review 只接受 `PASS | REPAIR_REQUIRED | BLOCKED`。PASS 只写 `APPLY_PENDING`，不能把 review 通过解释为 main workspace 已更新。
+- repair：必须绑定当前 EvidenceBundle 和原 approval summary；在 provider side effect 前消耗唯一 repair 次数，创建 round 1 新 attempt，并复核 runtime route/policy、累计预算与当前 content-hash egress。任何 provider/model/budget/scope/privacy 变化 BLOCKED。
+- apply：只由显式 `router.apply` 触发；先核对批准 main snapshot、dirty overlap、当前 bundle/worktree snapshot、单一目标 full-file preimage 与 reviewed postimage，再复用 S4 原子 patch。成功不 commit/merge/push；same-bundle duplicate apply 幂等。
+- 兼容：底层 repair executor 不再从 REVIEW_PENDING 自行制造 repair 决策；legacy bridge 在既有 quality/review decision point 显式写 durable REPAIR_REQUIRED checkpoint。
+- 验证：TypeScript、git diff check、新增 S8 6/6 tests、拆分全量 24 files 342/342 tests。全部 synthetic/mock，无真实配置、凭据、API、网络或费用操作。
+- 边界：单文件 UTF-8 replacement/create；write 后 APPLIED checkpoint 前 crash、多文件事务、真实 MCP/provider/peer/usage/cost 和 OS sandbox 未认证。
+- 当前状态：S8 离线阶段门通过；S9 可在独立会话按授权开始。
+
+## 2026-08-24｜S9 零费用完整控制链认证与首次执行预算修复
+
+- 范围：只认证 canonical Orchestrator-first 控制链；使用临时 synthetic repo/state/worktree/MCP、mock auth/fetch/DeepSeek/GPT review decision/local command，不扩 provider、scope、预算、隐私或真实注册。
+- 矩阵：clean/dirty、public/private/secret、allow/deny、Flash/Pro、wrong endpoint/auth/model/protocol、success/pre-send failure/timeout/reset/response lost、PREPARED/SENDING/SUCCEEDED crash、duplicate/concurrent、scope、secret、usage、quality、一次 repair pass/fail、apply conflict、redaction 和 cleanup ownership 全部失败关闭或按批准路径通过。
+- 缺陷：canonical 初次 EXECUTE response 原先未在 patch apply 前复核累计 token usage；已让 EXECUTE/REPAIR 共用预算检查。超预算响应归 `response_invalid → AMBIGUOUS/BLOCKED`，worktree/main 不接受 patch，不自动重发。
+- 证据：TypeScript `--noEmit`、`git diff --check`、S8 6/6、S9 26/26、Direct adapter 43/43、全量 25 files 368/368、外置临时 emit build 174 files 全部通过；临时 build 已 exact-path 核验后删除。
+- runner 信号：一次修改前全并行基线在 342 assertions 通过后出现临时目录已删除时的未处理 lstat rejection；随后 adapter 单测、S9 与全量并行均通过且未复现，因此保留为 runner-flake 风险，不宣称产品修复。
+- 隐私/费用：真实 API 请求数和费用为零；未读真实 config/auth/DPAPI/credential-bearing env，未注册真实 MCP，未运行 live benchmark 或使用私有任务源码。
+- 当前状态：S9 阶段门通过；S0–S9 仅达到 `eligible for limited live Pilot`。S10 仍需当次明确任务、外发、credential/MCP 变更、调用/预算与停止条件授权。
+
+## 2026-08-24｜S10 preflight 成本证据、MCP 模板与 GPT-only ADR
+
+- 决策：一个 attempt 与多个可能计费 HTTP round 分离；EvidenceBundle v3 按 round 累计 request/token/cache/wall/list estimate，四层 cost 不互相推断，`null` 与零分离。
+- 审批：pricing catalog version/hash 进入 RouteBinding；过期、未知、usage/cache 不完整或目录变化均失败关闭/要求重批。
+- GPT-only：当前 foreground exact model/request/token/quota 不可证明，未采用 proposal ingestion；Pilot pair 的核心证据不可得门固定为 `stop`。
+- MCP：只生成 exact STDIO 注册 diff 和回滚方案；临时 home discovery 八工具通过，但没有写真实 Codex 配置。当前会话实际工具不可发现，因此状态为 BLOCKED。
+
+## 2026-08-24｜三部分 Agent Team 闭环取代逐 S 阶段交接
+
+- 决策：S0–S10 的历史设计与证据继续保留，但后续执行只使用三个部分：离线工程闭环、真实链路/降费证明、日常能力硬化/发布闭环。
+- 团队：子 agent 只并行处理互不重叠的实现、测试或只读审计；共享核心由主 agent 串行整合，真实配置、credential、provider 请求和 apply 只能由主 agent 在 exact approval 下执行。
+- 成本门：Part 2 必须证明 hybrid 同质量下的总可审计成本相对 GPT-only 至少下降 30%，且 scope/privacy/routing/secret/main pollution、ambiguity 与 unexplained duplicate 为零；缺少可靠 GPT telemetry 时保持 BLOCKED。
+- 文档：`docs/17` 成为唯一当前交接，三个 Prompt 分别存于 `prompts/part-*.md`；旧逐阶段 Prompt 只由 Git 历史保存。S1–S9 文档仍是技术规格与离线证据，不当作当前执行入口。
+- 配置：删除重复 YAML policy mirror，runtime 示例统一为严格 JSON；MCP 示例中的用户绝对路径改为 generic sanitized preview，真实安装必须重新生成并批准 exact local block。

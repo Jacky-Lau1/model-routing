@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "provider_id": "deepseek",
+  "adapter_id": "deepseek-chat-direct",
+  "model_id": "deepseek-v4-flash",
+  "endpoint_origin": "https://api.deepseek.com",
+  "endpoint_path": "/chat/completions",
+  "wire_protocol": "chat_completions",
+  "auth_alias": "deepseek-env",
+  "reasoning_mode": "enabled",
+  "reasoning_effort": "high",
+  "network_scope": ["https://api.deepseek.com"],
+  "environment_scope": ["DEEPSEEK_API_KEY"],
+  "command_scope": []
+}

@@ -1,4 +1,5 @@
-import { createRouteBinding, assertEgressPolicy, assertPathScope, assertRequestBudget, assertTaskPackage, stableHash } from "./contracts.js";
+import { createRouteBinding, assertEgressPolicy, assertPathScope, assertRequestBudget, assertTaskPackage, stableHash, type RouteBindingInput } from "./contracts.js";
+import { PRICING_CATALOG_HASH, PRICING_CATALOG_VERSION } from "./cost.js";
 import { hashesEqual } from "./canonical.js";
 import { isAllowedPath } from "./scope-guard.js";
 import { WORKFLOW_VERSION, type EffectivePolicy, type PersistenceProfile, type ProjectPolicy, type RequestBudget, type RouteBinding, type RouteDecision, type SensitivityClass, type Stage, type TaskPackage, type TaskProfile, type UserPolicy } from "./types.js";
@@ -93,7 +94,7 @@ export function assertEffectivePolicy(policy: EffectivePolicy): void {
  * S1 only builds and approves immutable data. It deliberately does not invoke
  * an adapter, resolve credentials, or perform endpoint preflight (S5).
  */
-export function buildRouteBinding(input: Omit<RouteBinding, "route_binding_hash">, task: TaskPackage, policy: EffectivePolicy, now = new Date()): RouteBinding {
+export function buildRouteBinding(input: Omit<RouteBindingInput, "pricing_catalog_version" | "pricing_catalog_hash">, task: TaskPackage, policy: EffectivePolicy, now = new Date()): RouteBinding {
   assertTaskPackage(task); assertEffectivePolicy(policy);
   requireScopeSubset(input.read_scope, task.read_scope, "RouteBinding.read_scope exceeds TaskPackage.read_scope");
   requireScopeSubset(input.write_scope, task.write_scope, "RouteBinding.write_scope exceeds TaskPackage.write_scope");
@@ -102,7 +103,7 @@ export function buildRouteBinding(input: Omit<RouteBinding, "route_binding_hash"
   requireBudgetWithin(input.request_budget, task.request_budget, "TaskPackage request budget");
   requireBudgetWithin(input.request_budget, policy.budget_ceiling, "effective policy budget");
   if (input.provider_id === "deepseek") assertThirdPartyEgress(task, policy, input.read_scope, now);
-  return createRouteBinding(input);
+  return createRouteBinding({ ...input, pricing_catalog_version: input.provider_id === "local" ? null : PRICING_CATALOG_VERSION, pricing_catalog_hash: input.provider_id === "local" ? null : PRICING_CATALOG_HASH });
 }
 
 function validatePolicyCore(input: UserPolicyInput | ProjectPolicyInput, name: string, user: boolean): void {
@@ -155,7 +156,7 @@ function narrowerBudget(user: RequestBudget, project: RequestBudget): RequestBud
 }
 
 function requireBudgetWithin(candidate: RequestBudget, ceiling: RequestBudget, name: string): void {
-  const numeric: Array<keyof Pick<RequestBudget, "max_input_tokens" | "max_output_tokens" | "max_tool_calls" | "max_wall_time_ms">> = ["max_input_tokens", "max_output_tokens", "max_tool_calls", "max_wall_time_ms"];
+  const numeric: Array<keyof Pick<RequestBudget, "max_attempts" | "max_provider_requests" | "max_input_tokens" | "max_output_tokens" | "max_tool_calls" | "max_request_wall_time_ms" | "max_wall_time_ms">> = ["max_attempts", "max_provider_requests", "max_input_tokens", "max_output_tokens", "max_tool_calls", "max_request_wall_time_ms", "max_wall_time_ms"];
   if (numeric.some(key => candidate[key] > ceiling[key])) throw new Error(`${name} exceeded`);
   const candidateCost = candidate.max_estimated_cost_usd ?? Number.POSITIVE_INFINITY;
   const ceilingCost = ceiling.max_estimated_cost_usd ?? Number.POSITIVE_INFINITY;

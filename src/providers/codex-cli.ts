@@ -17,7 +17,7 @@ export class CodexCliAdapter implements ProviderAdapter {
 
   preflight(request: ProviderRequest): void {
     if (!request.routeBinding) return;
-    preflightRouteBinding(request.routeBinding, request.route, CODEX_ADAPTER_ID);
+    preflightRouteBinding(request.routeBinding, request.route, CODEX_ADAPTER_ID, request.contractProvenance ?? "legacy_bridge");
     throw new Error("Codex CLI transport URL, response headers, and auth source are not independently observable for an immutable execution binding");
   }
 
@@ -82,7 +82,7 @@ async function run(executable: string, args: string[], input: string, env: NodeJ
 
 export function parseCodexJsonLines(output: string, request: ProviderRequest): ProviderResponse {
   let text = ""; let requestId: string | null = null; let actualModel: string | null = null;
-  const usageAvailability = { inputTokens: false, outputTokens: false, reasoningTokens: false };
+  const usageAvailability = { inputTokens: false, outputTokens: false, reasoningTokens: false, cacheHitTokens: false, cacheMissTokens: false };
   const usage: UsageMetrics = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 };
   for (const line of output.split(/\r?\n/).filter(Boolean)) {
     let event: any; try { event = JSON.parse(line); } catch { continue; }

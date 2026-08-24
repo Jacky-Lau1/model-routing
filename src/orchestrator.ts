@@ -7,9 +7,10 @@ import { stableHash } from "./canonical.js";
 import { classifyTask } from "./classifier.js";
 import { assertRouteBinding, createEvidenceBundle } from "./contracts.js";
 import { buildPrompt } from "./context.js";
-import { estimateEquivalentUsd, PRICING_CATALOG_VERSION } from "./cost.js";
+import { estimateEquivalentUsd, pricingCatalogEvidence, PRICING_CATALOG_VERSION } from "./cost.js";
 import { StateStore, transitionState } from "./persistence.js";
 import { decideRoute } from "./policy.js";
+import { assertProviderRouteEvidence, providerRequestFingerprint } from "./provider-evidence.js";
 import { redactError } from "./redaction.js";
 import { DEFAULT_QUALITY_GATE_POLICY, assertQualityGatePolicy, assertQualityGateReportForRequest, persistEvidenceBundle, readEvidenceArtifact } from "./quality-gate.js";
 import { adapterIdFor, buildLegacyRouteBinding, freezeRouteBinding, preflightRouteBinding } from "./route-preflight.js";
@@ -244,12 +245,20 @@ export class RouterOrchestrator {
     const combinedEvidence = [...(state.routeEvidence ?? []), evidence(decideRoute("VALIDATE", state.profile), localResponse)];
     const routeEvidenceIds = combinedEvidence.map((item, index) => `route-${stableHash({ item, occurrence: index }).slice(0, 24)}`);
     const usage = state.usage;
-    const availability = state.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true };
+    const availability = state.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true, cacheHitTokens: true, cacheMissTokens: true };
     const taskProjectionHash = stableHash(state.plan);
     const executionContextHash = stableHash({ provenance: "legacy_bridge", run_id: lease.binding.run_id, task_id: state.taskId, base_commit: lease.binding.base_commit, worktree_id: lease.binding.worktree_id, isolation_hash: lease.binding.isolation_hash, approval_hash: approvalHash });
-    const estimated = state.normalizedEquivalentUsd ?? null;
+    const transportRounds = attempts.flatMap(item => item.transport_rounds);
+    const modelAttempts = attempts.filter(item => item.stage === "EXECUTE" || item.stage === "REPAIR");
+    const modelRounds = modelAttempts.flatMap(item => item.transport_rounds);
+    const roundEstimated = modelRounds.length && modelRounds.every(item => item.estimated_list_cost_usd !== null) ? sumLegacyCosts(modelRounds.map(item => item.estimated_list_cost_usd!)) : null;
+    const estimated = roundEstimated ?? (modelRounds.length === 0 ? state.normalizedEquivalentUsd ?? null : null);
+    const providerReported = modelRounds.length && modelRounds.every(item => item.provider_reported_cost_usd !== null) ? sumLegacyCosts(modelRounds.map(item => item.provider_reported_cost_usd!)) : null;
+    const pricedBands = modelRounds.map(item => item.pricing_time_band).filter((item): item is NonNullable<typeof item> => item !== null);
+    const executeWall = sumLegacyRoundWall(modelAttempts.filter(item => item.stage === "EXECUTE").flatMap(item => item.transport_rounds));
+    const repairWall = sumLegacyRoundWall(modelAttempts.filter(item => item.stage === "REPAIR").flatMap(item => item.transport_rounds));
     const input = {
-      version: 2 as const, bundle_id: `bundle-${stableHash({ run: lease.binding.run_id, content: report.content_snapshot_hash, round: state.repairAttempts }).slice(0, 24)}`,
+      version: 3 as const, bundle_id: `bundle-${stableHash({ run: lease.binding.run_id, content: report.content_snapshot_hash, round: state.repairAttempts }).slice(0, 24)}`,
       run_id: lease.binding.run_id, task_id: state.taskId, contract_provenance: "legacy_bridge" as const,
       task_package_hash: taskProjectionHash, route_binding_hash: state.plan!.routeBinding.route_binding_hash, policy_hash: effectivePolicyHash, quality_policy_hash: this.qualityPolicy.policy_hash, quality_policy: { ...this.qualityPolicy, command_ids: [...this.qualityPolicy.command_ids] },
       approval_hash: approvalHash, execution_context_hash: executionContextHash, isolation_hash: lease.binding.isolation_hash, worktree_id: lease.binding.worktree_id,
@@ -259,10 +268,17 @@ export class RouterOrchestrator {
       attempt_ids: attempts.map(item => item.attempt_id), route_evidence_ids: routeEvidenceIds,
       attempt_summaries: attempts.map(item => ({ attempt_id: item.attempt_id, stage: item.stage, status: item.status, failure_class: item.failure_class })),
       route_evidence_summaries: combinedEvidence.map((item, index) => ({ evidence_id: routeEvidenceIds[index], provider: item.actualProvider, model: item.actualModel ?? item.expectedModel, verification_status: item.verificationStatus, request_id_present: item.requestId !== null })),
+      transport_rounds: transportRounds,
       files_changed: [...report.files_changed], content_snapshot_hash: report.content_snapshot_hash, diff_hash: report.diff_hash, diff_reference: report.diff_reference,
       quality_gate_results: report.quality_gate_results, tests_run: report.tests_run, scope_violations: report.scope_violations, privacy_violations: report.privacy_violations,
-      secret_scan_summary: report.secret_scan_summary, usage_metrics: { input_tokens: availability.inputTokens ? usage?.inputTokens ?? null : null, output_tokens: availability.outputTokens ? usage?.outputTokens ?? null : null, reasoning_tokens: availability.reasoningTokens ? usage?.reasoningTokens ?? null : null },
-      cost_metrics: { provider_reported_usd: null, estimated_list_usd: estimated, invoice_usd: null, chatgpt_quota: null }, wall_clock_time_ms: report.wall_clock_time_ms,
+      secret_scan_summary: report.secret_scan_summary, usage_metrics: {
+        input_tokens: availability.inputTokens ? usage?.inputTokens ?? null : null, output_tokens: availability.outputTokens ? usage?.outputTokens ?? null : null, reasoning_tokens: availability.reasoningTokens ? usage?.reasoningTokens ?? null : null,
+        cached_input_tokens: availability.inputTokens ? usage?.cachedInputTokens ?? null : null, cache_write_tokens: availability.inputTokens ? usage?.cacheWriteTokens ?? null : null,
+        cache_hit_tokens: availability.cacheHitTokens ? usage?.cacheHitTokens ?? null : null, cache_miss_tokens: availability.cacheMissTokens ? usage?.cacheMissTokens ?? null : null,
+      },
+      cost_metrics: { provider_reported_usd: providerReported, estimated_list_usd: estimated, invoice_usd: null, chatgpt_quota: null },
+      pricing_catalog: roundEstimated === null ? null : pricingCatalogEvidence(pricedBands), wall_clock_time_ms: report.wall_clock_time_ms,
+      stage_wall_clock_ms: { plan: null, execute: executeWall, gate: report.wall_clock_time_ms, review: null, repair: repairWall, total: executeWall + report.wall_clock_time_ms + repairWall },
       repair_count: state.repairAttempts, remaining_risks: ["legacy_bridge_contract_projection", "project_commands_not_os_sandboxed", "secret_scan_is_heuristic", "network_peer_and_proxy_not_observable"],
       redaction_notes: report.redaction_notes,
     };
@@ -291,6 +307,12 @@ export class RouterOrchestrator {
   private async repairOrDiagnose(state: RunState, projectDirectory: string, evidenceText: string): Promise<RunState> {
     if (!state.plan || state.repairAttempts >= 1) return this.diagnose(state, projectDirectory, evidenceText);
     const plan = state.plan;
+    if (!state.approval) throw new Error("Legacy repair requires the existing approval");
+    const durable = await this.attempts.status(state.taskId);
+    if (!durable.workflow) throw new Error("Legacy repair workflow checkpoint is missing");
+    if (durable.workflow.state === "REVIEW_PENDING") {
+      await this.attempts.finalizeReview(state.taskId, durable.workflow.run_id, executionApprovalHash(plan, state.approval.isolationHash), "REPAIR_REQUIRED", "Legacy quality/review evidence requested the single bounded repair");
+    } else if (durable.workflow.state !== "REPAIR_REQUIRED") throw new Error("Legacy repair is not pending an explicit repair decision");
     state = move(state, "REPAIRING");
     const route = decideRoute("REPAIR", state.profile);
     const scopeBefore = await snapshotWorkingTree(projectDirectory);
@@ -352,7 +374,9 @@ export class RouterOrchestrator {
           complete: true, provider_request_id: response.requestId, response_model: response.model,
           response_origin: response.routeEvidence?.actualOrigin ?? "not_observable", usage: {
             input_tokens: response.usage.inputTokens, output_tokens: response.usage.outputTokens, reasoning_tokens: response.usage.reasoningTokens,
+            cached_input_tokens: response.usage.cachedInputTokens, cache_write_tokens: response.usage.cacheWriteTokens, cache_hit_tokens: response.usage.cacheHitTokens, cache_miss_tokens: response.usage.cacheMissTokens,
           },
+          transport_rounds: response.transportRounds ?? [], provider_reported_cost_usd: response.providerReportedCostUsd ?? null, estimated_list_cost_usd: response.estimatedListCostUsd ?? null,
         };
       },
     });
@@ -364,7 +388,7 @@ function move(state: RunState, next: LegacyWorkflowState): RunState { assertLega
 function parseJson<T>(text: string): T { const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]; const source = fenced ?? text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1); try { return JSON.parse(source) as T; } catch { throw new Error("Model output was not valid JSON"); } }
 function requiredArray(value: string[] | undefined, name: string): string[] { if (!Array.isArray(value) || value.length === 0) throw new Error(`Plan field ${name} must be a non-empty array`); return value; }
 function evidence(route: RouteDecision, response: ProviderResponse) {
-  const availability = response.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true };
+  const availability = response.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true, cacheHitTokens: true, cacheMissTokens: true };
   const cost = availability.inputTokens && availability.outputTokens ? estimateEquivalentUsd(route.model, response.usage) : undefined;
   const transport = response.routeEvidence ?? {
     routeBindingHash: null, adapterId: `${route.provider}-legacy`, expectedProvider: route.provider,
@@ -379,30 +403,18 @@ function evidence(route: RouteDecision, response: ProviderResponse) {
   return { ...transport, actualProvider: response.provider, verified: transport.verificationStatus === "local", usage: response.usage, ...(cost === undefined ? {} : { normalizedEquivalentUsd: cost, pricingCatalogVersion: PRICING_CATALOG_VERSION }) };
 }
 function addResponse(state: RunState, route: RouteDecision, response: ProviderResponse): RunState {
-  const item = evidence(route, response); const observed = response.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true };
+  const item = evidence(route, response); const observed = response.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true, cacheHitTokens: true, cacheMissTokens: true };
   return { ...state, routeEvidence: [...(state.routeEvidence ?? []), item], usage: mergeUsage(state.usage, response.usage), usageAvailability: mergeUsageAvailability(state.usageAvailability, observed, state.usage === undefined), normalizedEquivalentUsd: item.normalizedEquivalentUsd === undefined ? state.normalizedEquivalentUsd : Math.round(((state.normalizedEquivalentUsd ?? 0) + item.normalizedEquivalentUsd) * 1e9) / 1e9 };
 }
 function mergeUsage(a: UsageMetrics | undefined, b: UsageMetrics): UsageMetrics { const base = a ?? { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 }; return Object.fromEntries(Object.keys(base).map(key => [key, base[key as keyof UsageMetrics] + b[key as keyof UsageMetrics]])) as unknown as UsageMetrics; }
-function mergeUsageAvailability(a: UsageAvailability | undefined, b: UsageAvailability, first: boolean): UsageAvailability { return first || !a ? { ...b } : { inputTokens: a.inputTokens && b.inputTokens, outputTokens: a.outputTokens && b.outputTokens, reasoningTokens: a.reasoningTokens && b.reasoningTokens }; }
+function mergeUsageAvailability(a: UsageAvailability | undefined, b: UsageAvailability, first: boolean): UsageAvailability { return first || !a ? { ...b } : { inputTokens: a.inputTokens && b.inputTokens, outputTokens: a.outputTokens && b.outputTokens, reasoningTokens: a.reasoningTokens && b.reasoningTokens, cacheHitTokens: a.cacheHitTokens && b.cacheHitTokens, cacheMissTokens: a.cacheMissTokens && b.cacheMissTokens }; }
+function sumLegacyCosts(values: number[]): number { return Math.round(values.reduce((total, value) => total + value, 0) * 1e12) / 1e12; }
+function sumLegacyRoundWall(rounds: Array<{ wall_clock_time_ms: number | null }>): number { return rounds.reduce((total, round) => total + (round.wall_clock_time_ms ?? 0), 0); }
 function projectSummary(directory?: string): string { return JSON.stringify({ platform: process.platform, project: path.basename(directory ?? process.cwd()), sensitivePathsExcluded: true }); }
 function runIdFor(taskId: string): string { return `run-${stableHash(taskId).slice(0, 24)}`; }
 function preApprovalHash(taskId: string): string { return stableHash({ task_id: taskId, authority: "preapproval-planning" }); }
 function executionApprovalHash(plan: PlanPacket, isolationHash: string): string { return stableHash({ task_id: plan.taskId, plan_hash: stableHash(plan), route: plan.route, isolation_hash: isolationHash }); }
 function requiredIsolationHash(state: RunState): string { if (!state.approval?.isolationHash) throw new Error("Missing approved isolation binding"); return state.approval.isolationHash; }
-function providerRequestFingerprint(request: ProviderRequest): string { return stableHash({
-  stage: request.stage, route: request.route, stable_prefix: request.stablePrefix, project_summary: request.projectSummary,
-  dynamic_input: request.dynamicInput, sensitivity: request.sensitivity, allowed_files: request.allowedFiles ?? [],
-  route_binding: request.routeBinding ?? null, executor_capabilities: request.executorCapabilities ?? null, quality_gate: request.qualityGate ?? null, tools: request.tools ?? [],
-}); }
-function assertProviderRouteEvidence(request: ProviderRequest, response: ProviderResponse): void {
-  const binding = request.routeBinding!; const item = response.routeEvidence;
-  if (!item || item.routeBindingHash !== binding.route_binding_hash || item.adapterId !== binding.adapter_id) throw new Error("Provider route evidence was missing or bound to a different adapter");
-  if (item.expectedProvider !== binding.provider_id || item.expectedModel !== binding.model_id || item.expectedOrigin !== binding.endpoint_origin || item.expectedPath !== binding.endpoint_path || item.wireProtocol !== binding.wire_protocol || item.authAlias !== binding.auth_alias) throw new Error("Provider route evidence did not match the approved binding");
-  if (!item.routeTupleVerified || !item.evidenceComplete || item.verificationStatus !== "route_tuple_verified_peer_unobserved" || item.peerVerification !== "not_observable" || item.proxyVerification !== "not_observable" || item.unverifiedReasons.join("|") !== "network_peer_not_observable|proxy_not_observable" || item.actualOrigin !== binding.endpoint_origin || item.actualPath !== binding.endpoint_path || item.actualModel !== binding.model_id || item.redirected !== false) throw new Error("Provider route tuple was not completely verified");
-  if (!item.requestId || item.requestId !== response.requestId || !item.requestIds.includes(item.requestId)) throw new Error("Provider request ID evidence was incomplete");
-  const targetUrl = new URL(binding.endpoint_path, `${binding.endpoint_origin}/`).href;
-  if (item.requestIds.length !== item.observations.length || item.bodyResponseIds.length !== item.observations.length || item.headerRequestIds.length !== item.observations.length || item.observations.some((observation, index) => !observation.routeTupleVerified || observation.failureReason !== null || observation.targetUrl !== targetUrl || observation.responseUrl !== targetUrl || observation.status === null || observation.status < 200 || observation.status >= 300 || observation.actualOrigin !== binding.endpoint_origin || observation.actualPath !== binding.endpoint_path || observation.actualModel !== binding.model_id || observation.redirected !== false || !observation.requestId || observation.requestId !== item.requestIds[index] || observation.bodyResponseId !== item.bodyResponseIds[index] || observation.headerRequestId !== item.headerRequestIds[index])) throw new Error("One or more provider transport turns lacked complete route evidence");
-}
 function validateDraftPlan(value: DraftPlan): void {
   requiredArray(value.steps, "steps"); requiredArray(value.readFiles, "readFiles"); requiredArray(value.writeFiles, "writeFiles"); requiredArray(value.acceptance, "acceptance");
   if (!value || !["public", "private", "secret_restricted"].includes(value.dataClassification)) throw new Error("Plan field dataClassification is invalid");

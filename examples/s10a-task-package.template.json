@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "task_id": "PILOT-SUM-001",
+  "goal": "Fix the public synthetic sumPositive(values) fixture.",
+  "background_summary": "A bounded public synthetic smoke fixture. This template is not execution authorization.",
+  "acceptance_criteria": ["Visible and hidden sumPositive tests pass", "Only src/sum.mjs changes", "No Draft PR main-workspace write occurs"],
+  "non_goals": ["No Draft PR source edit", "No deployment", "No provider escalation"],
+  "forbidden_actions": ["Do not disclose hidden tests or the reference answer", "Do not redirect", "Do not upgrade Flash to Pro", "Do not call router.apply"],
+  "read_scope": ["benchmark/fixtures/simple-sum/README.md", "benchmark/fixtures/simple-sum/src/sum.mjs", "benchmark/fixtures/simple-sum/test/sum.test.mjs"],
+  "write_scope": ["benchmark/fixtures/simple-sum/src/sum.mjs"],
+  "relevant_interfaces": ["sumPositive(values)"],
+  "context_manifest": [
+    { "path": "benchmark/fixtures/simple-sum/README.md", "kind": "file", "selector": null, "content_hash": "810be53b24d0da3a0cd18485255e11d551a030e41de829f78f324dd28ed2fb24", "source": "synthetic_fixture", "byte_length": 317, "summary": "Public synthetic task description." },
+    { "path": "benchmark/fixtures/simple-sum/src/sum.mjs", "kind": "file", "selector": null, "content_hash": "008d1c89ee6a71bc35e86f4c1347d99b3e5846f3debbffda96c08de0b53e574d", "source": "synthetic_fixture", "byte_length": 103, "summary": "Public synthetic implementation under test." },
+    { "path": "benchmark/fixtures/simple-sum/test/sum.test.mjs", "kind": "file", "selector": null, "content_hash": "2c6ae0e20a821a1bde588ef1aaba1c98f444ba00e905cbd2d4716a6878a98833", "source": "synthetic_fixture", "byte_length": 323, "summary": "Public visible synthetic tests." }
+  ],
+  "validation_requirements": ["Run visible tests", "Run the local hidden gate without egress", "Verify unchanged main workspace"],
+  "stop_conditions": ["Any scope, privacy, routing, secret, ambiguity, duplicate-request, budget, identity, or main-workspace-pollution violation"],
+  "data_classification": "public",
+  "egress_policy": {
+    "mode": "allow", "providers": ["deepseek"],
+    "paths": ["benchmark/fixtures/simple-sum/README.md", "benchmark/fixtures/simple-sum/src/sum.mjs", "benchmark/fixtures/simple-sum/test/sum.test.mjs"],
+    "content_hashes": ["810be53b24d0da3a0cd18485255e11d551a030e41de829f78f324dd28ed2fb24", "008d1c89ee6a71bc35e86f4c1347d99b3e5846f3debbffda96c08de0b53e574d", "2c6ae0e20a821a1bde588ef1aaba1c98f444ba00e905cbd2d4716a6878a98833"],
+    "authorization_id": "pending-s10a-exact-approval", "authorized_by": "user", "authorized_at": "2026-08-24T00:00:00.000Z", "expires_at": null
+  },
+  "request_budget": { "max_attempts": 2, "max_provider_requests": 6, "max_input_tokens": 4000, "max_output_tokens": 1000, "max_tool_calls": 2, "max_request_wall_time_ms": 30000, "max_wall_time_ms": 300000, "max_estimated_cost_usd": 0.00308, "billing_mode": "prepaid" },
+  "created_at": "2026-08-24T00:00:00.000Z",
+  "task_package_hash": "202d276d07c233fc9561b15a01558d068f789147e61c55be7d2fe3162e85afc2"
+}

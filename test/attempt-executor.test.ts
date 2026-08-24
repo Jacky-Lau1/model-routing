@@ -42,7 +42,9 @@ function operation(onSend: () => void = () => undefined): AttemptOperation<{ bod
         provider_request_id: "mock-request-1",
         response_model: "mock-model",
         response_origin: "mock://provider",
-        usage: { input_tokens: 2, output_tokens: 1, reasoning_tokens: 0 },
+        usage: { input_tokens: 2, output_tokens: 1, reasoning_tokens: 0, cached_input_tokens: 0, cache_write_tokens: 0, cache_hit_tokens: 0, cache_miss_tokens: 2 },
+        transport_rounds: [{ round_id: "round-mock-1", sequence: 0, stage: "EXECUTE", request_id: "mock-request-1", started_at: "2026-08-24T02:00:00.000Z", completed_at: "2026-08-24T02:00:00.001Z", wall_clock_time_ms: 1, response_model: "mock-model", response_origin: "mock://provider", response_path: "/mock", http_status: 200, outcome: "SUCCEEDED", failure_class: null, usage: { input_tokens: 2, output_tokens: 1, reasoning_tokens: 0, cached_input_tokens: 0, cache_write_tokens: 0, cache_hit_tokens: 0, cache_miss_tokens: 2 }, cache_status: "miss", provider_reported_cost_usd: null, estimated_list_cost_usd: 0, pricing_catalog_version: "synthetic", pricing_catalog_hash: "0".repeat(64), pricing_time_band: "peak" }],
+        provider_reported_cost_usd: null, estimated_list_cost_usd: 0,
       };
     },
   };
@@ -134,8 +136,9 @@ describe("idempotency and failure classification", () => {
   });
 
   it("creates a new repair attempt without overwriting history", async () => {
-    const { executor } = await fixture(); const initial = request("repair-history");
+    const { executor } = await fixture(); const initial = request("repair-history", { success_workflow_state: "REVIEW_PENDING" });
     const first = await executor.execute(initial, operation());
+    await executor.finalizeReview(initial.task_id, initial.run_id, initial.approval_hash, "REPAIR_REQUIRED", "Synthetic foreground review requested one bounded repair");
     const repairInput = request("repair-history", { stage: "REPAIR", round: 1, request_fingerprint: stableHash({ request: "repair-history", round: 1 }), success_workflow_state: "VALIDATING" });
     const repaired = await executor.repair(repairInput, operation());
     const status = await executor.status(initial.task_id);

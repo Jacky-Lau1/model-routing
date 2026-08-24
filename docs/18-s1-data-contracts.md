@@ -45,7 +45,7 @@ effective egress           = user allow ∩ project allow
 user deny                  = 永久 deny，project allow 不得覆盖
 ```
 
-第一版对包含 glob 的 policy 采用保守子集证明；无法证明收窄就拒绝，不猜测权限关系。`config/user-policy.example.yaml` 和 `config/routing-policy.example.yaml` 仅使用合成值，前者不代表真实 user policy 应提交进仓库。
+第一版对包含 glob 的 policy 采用保守子集证明；无法证明收窄就拒绝，不猜测权限关系。当前合成示例统一为 `config/user-policy.example.json` 与 `config/project-policy.example.json`；它们不代表真实 user/project policy 应提交进仓库。
 
 ## 规范化序列化与哈希
 

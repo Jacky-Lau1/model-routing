@@ -1,10 +1,10 @@
 # 16｜Orchestrator-first 最终实施计划与阶段门
 
-> 状态：已接受的实施基线；S0–S6 已完成离线阶段门，S7–S9 尚未开始，规定的真实验证尚未运行。
+> 状态：已接受的架构、合同与安全基线；S0–S9 已完成 mock/synthetic 零费用阶段门，S10 preflight 已离线整改但真实验证尚未运行。当前执行顺序已由旧 S0–S10 多会话方式收敛为 `docs/17` 的三个 Agent Team 部分。
 >
-> 更新时间：2026-08-21。
+> 更新时间：2026-08-24。
 >
-> 本文把 `docs/14-orchestrator-first-proposal.md`、外部评审建议和对 Draft PR #1 的代码复查合并为一条可分阶段执行的路线。每个阶段都应在独立 Codex 主会话中完成，并在通过阶段门后再进入下一阶段。
+> 本文保留完整设计推导、已完成阶段证据和长期 TODO。新实施不再逐个重跑 S0–S10，而是使用 `docs/17-orchestrator-first-stage-handoffs.md` 与 `prompts/part-*.md`；每个部分通过自己的阶段门后才能进入下一部分。
 
 ## 1. 最终目标体验
 
@@ -47,7 +47,7 @@ Codex GPT Final Review
 | 能力 | 当前状态 | 说明 |
 | --- | --- | --- |
 | 确定性路由策略 | Implemented / offline tested | 已有分类、阶段路由和预算测试，但策略将因隐私默认拒绝而调整 |
-| 审批哈希 | Implemented / offline tested | S1 新合同完整绑定 task/route/context/policy；legacy 路径已绑定 isolation hash 与 immutable RouteBinding，S7 新 core 接入仍待完成 |
+| 审批哈希 | Implemented / offline tested | canonical core 完整绑定 task/route/context/policy 与 compact approval summary；legacy 路径继续绑定 isolation hash 与 immutable RouteBinding |
 | DeepSeek Direct Adapter | Route tuple + capability restricted / offline attack-tested | S4 manifest/patch capability 与 S5 exact endpoint/auth/model/protocol/逐轮 mock evidence 已接入；不证明 network peer |
 | Codex CLI planning/review | Legacy unbound only / architecture mismatch | 后台另起 Codex，不等于当前 GPT Supervisor；bound transport 因 endpoint/auth/header 不可观测而 spawn 前失败 |
 | 主 working tree scope guard | Implemented / preventive + frozen evidence | S4 Direct Adapter 预防性 capability 与 S6 physical snapshot/report freeze 已接入；仍不是 OS sandbox |
@@ -56,12 +56,12 @@ Codex GPT Final Review
 | Isolated worktree | Implemented / offline tested | run-scoped detached worktree、dirty evidence、ownership-safe lifecycle 和冲突检测已通过 synthetic repo 测试；不是 OS sandbox |
 | Direct Adapter capability boundary | Implemented / offline attack-tested | S4 本地工具 surface 失败关闭；不等于 OS sandbox |
 | OS sandbox / low-privilege process | Design only | Job Object/AppContainer/低权限账户仍为 TODO-03 |
-| Immutable RouteBinding | Canonical + legacy bridge invoked / offline tested | canonical/legacy builder 深度冻结；legacy plan/approval/fingerprint 与 S2 prepare preflight 已接入，S7 full core 仍待迁移 |
+| Immutable RouteBinding | Canonical + legacy bridge invoked / offline tested | canonical/legacy builder 深度冻结；canonical core 与 legacy plan/approval/fingerprint 均接入 central preflight |
 | Ambiguous paid-call handling | Implemented / offline tested | S2 timeout/reset/response lost → AMBIGUOUS/BLOCKED，禁止自动重发 |
-| EvidenceBundle | Implemented / offline tested | S6 EvidenceBundle v2 由完整 QualityGateReport 生成并自校验；当前仍是 legacy bridge projection |
-| GPT foreground MCP/skill | Design only | 尚未实现 |
-| Project policy | Contract implemented / offline tested | S1 user/project 交集与默认 deny 已验证；S7 新 core 接入仍待完成 |
-| Orchestrator-first live validation | Not run | 旧架构的真实调用不能替代新架构验证 |
+| EvidenceBundle | Implemented / offline tested | S6 EvidenceBundle v2 由完整 QualityGateReport 生成并自校验；S7 canonical core 返回 hash-bound 受控引用与紧凑摘要 |
+| GPT foreground MCP/skill | Implemented / offline tested | 结构化 CLI、八工具 thin STDIO MCP 与 repo thin skill 共用 RouterCoreService；尚未写入真实 Codex 注册配置 |
+| Project policy | Implemented / offline tested | S1 user/project 交集与默认 deny 已接入 canonical prepare；配置示例不含密钥 |
+| Orchestrator-first validation | Zero-cost E2E passed / live not run | S9 mock/synthetic 完整控制链通过；旧架构真实调用不能替代 S10 新架构 Pilot |
 
 在所有阶段门和规定的真实验证完成前，不得称为 production ready。
 
@@ -661,6 +661,12 @@ router.finalize
 
 阶段门：一个 mock 任务可以完全在当前 GPT 主会话中完成 prepare → approve/execute → evidence → final review，期间主 Codex provider/config/auth 无变化。
 
+完成记录（2026-08-24）：新增 canonical `RouterCoreService`、外置原子 core state、结构化 `route router ...` CLI、直接 STDIO 的六工具 MCP 和 `.agents/skills/codex-router/SKILL.md`。CLI、MCP、skill 都只调用同一 core/既有 S1–S6 primitive；MCP schema 拒绝完整聊天或额外 `chat_history`，execute 只接受展示过的 `approval_summary_hash`，finalize 只接受当前 EvidenceBundle hash。S7 finalize 只记录前台 `PASS/BLOCKED`，不会 apply 主 workspace。
+
+零费用证据：TypeScript `--noEmit`；S7/共享安全回归定向 7/7 files、113/113 tests；全量 23/23 files、335/335 tests。单一 synthetic STDIO client 完成 initialize → tools/list → prepare → execute → review_evidence → finalize，模型发送一次；main workspace 文件及 synthetic provider/config/auth sentinel 目录 hash 前后相同。测试未创建 `.codex/config.toml`、未读取真实 config/auth/credential-bearing env、未联网、未调用 API/live benchmark。详见 `docs/24-s7-foreground-interface.md`。
+
+S7 阶段门：PASS。结论仅限直接启动 STDIO server 的 synthetic/mock 前台流程；真实 Codex MCP 注册与 live tool invocation 尚未获得授权、未验证。S8 repair/apply、private Direct capability、OS sandbox、DNS peer/proxy/TLS 和真实 provider route 仍不在本阶段结论内。
+
 ### S8｜Final Review、单次 Repair 与 Apply
 
 目标：把“质量门通过”“GPT 审查通过”和“应用到主 workspace”明确分开。
@@ -677,6 +683,14 @@ router.finalize
 8. 第一版不自动 commit/merge；是否应用由用户或 GPT 主会话在明确授权范围内触发。
 
 阶段门：主 workspace 在未进入受控 apply 前始终不变；冲突或范围变化必定 BLOCKED。
+
+完成记录（2026-08-24）：canonical core 的 final review 现严格接受 `PASS | REPAIR_REQUIRED | BLOCKED`。PASS 只转入 `APPLY_PENDING`；一次 repair 必须同时绑定当前 EvidenceBundle 与原 approval summary，使用 `REPAIR` round 1 新 attempt，并在同一 worktree 重新运行质量门、生成 repair_count=1 的新 EvidenceBundle。当前 runtime policy/route profile、provider/model、预算、scope、privacy/egress content hash 任一变化均失败关闭。
+
+apply 只由显式 `router.apply` 触发；写前复核 main workspace snapshot、初始 dirty overlap、当前 bundle/worktree snapshot、单一目标的 TaskPackage full-file preimage 与 reviewed postimage。写入复用 S4 原子 preimage patch；成功仅形成主 workspace 未提交修改，绝不 commit、merge 或 push。重复同 bundle apply 返回既有 `PASSED`，不会二次写入。详见 `docs/25-s8-final-review-repair-apply.md`。
+
+零费用证据：TypeScript `--noEmit`、`git diff --check`；新增 S8 6/6 tests；拆分全量 24 files、342 tests 全部通过。全部使用 synthetic Git repo、mock reviewer/provider/local gate；未联网、未读取真实 config/auth/credential-bearing environment、未调用 API/live benchmark、未产生费用。
+
+S8 阶段门：PASS。结论只覆盖 single-file text replacement/create 的 mock/synthetic MVP；多文件、rename/delete/binary、apply crash between filesystem write and APPLIED checkpoint、OS sandbox、真实 MCP/provider/peer/usage/cost 仍未认证。S9 可以开始；S10 仍禁止运行。
 
 ### S9｜零费用端到端认证
 
@@ -708,6 +722,12 @@ router.finalize
 - 主 workspace 和未跟踪 `dist/`、`node_modules/` 不变；
 - typecheck、lint、unit、integration、build 全部通过；
 - 已知未验证项被明确列入 EvidenceBundle/文档。
+
+完成记录（2026-08-24）：新增 `test/s9-zero-cost-e2e.test.ts`，在临时 synthetic Git repo、外置 state/managed worktree、mock DeepSeek/OpenAI-review decision、mock auth resolver/fetch/local command 和临时 STDIO MCP 中覆盖 clean/dirty、public/private/secret、allow/deny、Flash/Pro、wrong endpoint/auth/model/protocol、success/pre-send failure/timeout/reset/response lost、PREPARED/SENDING/SUCCEEDED crash、duplicate/concurrent、scope、secret、usage budget、quality pass/fail、一次 repair pass/fail、apply conflict、redaction 和 cleanup ownership。
+
+矩阵暴露并修复 canonical 首次 EXECUTE 未在 patch apply 前复核 provider-reported token usage 的缺陷；现在 EXECUTE/REPAIR 共用累计 attempt/token budget 检查，超预算 response 在任何 worktree patch 前进入 `response_invalid → AMBIGUOUS/BLOCKED`，不重发、不扩大预算。TypeScript `--noEmit`、`git diff --check`、S8 6/6、S9 26/26、Direct adapter 43/43、全量 25 files 368/368 和外置临时 emit build 均通过；build 174 个生成文件已在 exact-path 核验后清理。详见 `docs/26-s9-zero-cost-e2e-certification.md`。
+
+S9 阶段门：PASS。真实 API 请求/费用为零；未读真实 config/auth/DPAPI/credential-bearing env，未注册真实 MCP，未使用私有任务源码。S0–S9 已满足“eligible for limited live Pilot”，但 S10 仍必须取得当次明确授权，且真实 provider peer/usage/cost、OS sandbox、private capability、多文件 apply 和 write/APPLIED crash recovery 仍未认证。
 
 ### S10｜有限真实 Pilot
 

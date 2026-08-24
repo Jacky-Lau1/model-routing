@@ -4,11 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyTask } from "../src/classifier.js";
+import { createRouteBinding } from "../src/contracts.js";
 import { decideRoute } from "../src/policy.js";
-import { DeepSeekChatAdapter } from "../src/providers/deepseek-chat.js";
+import { DeepSeekChatAdapter, DeepSeekTransportError } from "../src/providers/deepseek-chat.js";
 import { buildLegacyRouteBinding, DEEPSEEK_ENDPOINT_ORIGIN, DEEPSEEK_ENDPOINT_PATH } from "../src/route-preflight.js";
 import { buildExecutorCapabilityGrant } from "../src/safe-executor.js";
-import type { ProviderRequest } from "../src/types.js";
+import type { ProviderBudgetState, ProviderRequest, RequestBudget, RouteDecision } from "../src/types.js";
 
 const roots: string[] = [];
 const targetUrl = `${DEEPSEEK_ENDPOINT_ORIGIN}${DEEPSEEK_ENDPOINT_PATH}`;
@@ -113,7 +114,8 @@ describe("DeepSeek official Chat Completions adapter", () => {
       return new Response(JSON.stringify({ id: "r", model: "deepseek-v4-flash", choices: [{ message: { content: "", tool_calls: [{ id: "p", type: "function", function: { name: "propose_patch", arguments: JSON.stringify({ path: "a.ts", preimageHash: grant.readManifest[0].contentHash, replacement: "export const a = 2;\n" }) } }] } }], usage: {} }), { status: 200 });
     } });
     const route = decideRoute("EXECUTE", classifyTask("Fix a bounded parser bug"));
-    await expect(adapter.invoke(bound({ stage: "EXECUTE", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal", workingDirectory: root, executorCapabilities: grant }))).rejects.toThrow(/reset/);
+    let failure: unknown; try { await adapter.invoke(bound({ stage: "EXECUTE", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal", workingDirectory: root, executorCapabilities: grant })); } catch (error) { failure = error; }
+    expect(failure).toBeInstanceOf(DeepSeekTransportError); expect((failure as DeepSeekTransportError).transportRounds.at(-1)).toMatchObject({ sequence: 1, outcome: "AMBIGUOUS", failure_class: "response_lost_or_transport_unknown" });
     expect(calls).toBe(2); expect(await readFile(path.join(root, "a.ts"), "utf8")).toBe(original);
   });
 
@@ -228,6 +230,59 @@ describe("DeepSeek official Chat Completions adapter", () => {
     await expect(adapter.invoke({ ...request, routeBinding: { ...request.routeBinding!, endpoint_path: "/v1/chat/completions" } })).rejects.toThrow(/hash|endpoint/);
     expect(resolver).not.toHaveBeenCalled(); expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it("records every canonical HTTP round and aggregates exact cache-aware list cost", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "deepseek-rounds-")); roots.push(root); await writeFile(path.join(root, "a.ts"), "export const a = 1;\n");
+    const route = canonicalRoute(); const grant = await buildExecutorCapabilityGrant(root, ["a.ts"], ["a.ts"], "public"); let calls = 0;
+    const adapter = canonicalAdapter(async () => {
+      calls++;
+      const message = calls === 1 ? { content: "", tool_calls: [{ id: "l", type: "function", function: { name: "list_manifest", arguments: "{}" } }] } : { content: "done" };
+      return responseAt({ id: `canonical-${calls}`, model: route.model, choices: [{ message }], usage: { prompt_tokens: 100, completion_tokens: 10, prompt_cache_hit_tokens: 20, prompt_cache_miss_tokens: 80, completion_tokens_details: { reasoning_tokens: 2 } } }, { url: targetUrl });
+    });
+    const response = await adapter.invoke(canonicalBound({ stage: "EXECUTE", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal", workingDirectory: root, executorCapabilities: grant }));
+    expect(response.transportRounds).toHaveLength(2); expect(response.transportRounds?.map(item => item.sequence)).toEqual([0, 1]);
+    expect(response.transportRounds?.every(item => item.cache_status === "mixed" && item.pricing_time_band === "peak")).toBe(true);
+    expect(response.usage).toMatchObject({ inputTokens: 200, outputTokens: 20, reasoningTokens: 4, cacheHitTokens: 40, cacheMissTokens: 160 });
+    expect(response.estimatedListCostUsd).toBe(0.00009736); expect(response.providerReportedCostUsd).toBeNull();
+  });
+
+  it.each([
+    ["attempt count", { attempts_used: 2 }],
+    ["provider request count", { provider_requests_used: 6 }],
+    ["total wall time", { wall_clock_time_ms_used: 270_001 }],
+  ])("fails before credential resolution and transport when canonical %s budget is exhausted", async (_name, delta) => {
+    const resolver = vi.fn(() => "synthetic"); const fetchImpl = vi.fn(); const route = canonicalRoute();
+    const adapter = new DeepSeekChatAdapter({ credentialResolver: resolver, fetchImpl: fetchImpl as typeof fetch, now: () => new Date("2026-08-24T07:00:00.000Z") });
+    await expect(adapter.invoke(canonicalBound({ stage: "TEXT_EXPAND", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal" }, undefined, { ...zeroState(), ...delta }))).rejects.toThrow(/budget|wall/);
+    expect(resolver).not.toHaveBeenCalled(); expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("fails before credential resolution and transport when worst-case list cost exceeds the approved ceiling", async () => {
+    const resolver = vi.fn(() => "synthetic"); const fetchImpl = vi.fn(); const route = canonicalRoute();
+    const adapter = new DeepSeekChatAdapter({ credentialResolver: resolver, fetchImpl: fetchImpl as typeof fetch, now: () => new Date("2026-08-24T07:00:00.000Z") });
+    await expect(adapter.invoke(canonicalBound({ stage: "TEXT_EXPAND", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal" }, { max_estimated_cost_usd: 0.000001 }))).rejects.toThrow(/cost budget|list price/);
+    expect(resolver).not.toHaveBeenCalled(); expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("checks actual cumulative usage before executing a returned tool call", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "deepseek-post-budget-")); roots.push(root); await writeFile(path.join(root, "a.ts"), "export const a = 1;\n");
+    const route = canonicalRoute(); const grant = await buildExecutorCapabilityGrant(root, ["a.ts"], ["a.ts"], "public"); let calls = 0;
+    const adapter = canonicalAdapter(async () => { calls++; return responseAt({ id: "over-budget", model: route.model, choices: [{ message: { content: "", tool_calls: [{ id: "l", type: "function", function: { name: "list_manifest", arguments: "{}" } }] } }], usage: { prompt_tokens: 20_001, completion_tokens: 1, prompt_cache_hit_tokens: 0, prompt_cache_miss_tokens: 20_001 } }, { url: targetUrl }); });
+    await expect(adapter.invoke(canonicalBound({ stage: "EXECUTE", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal", workingDirectory: root, executorCapabilities: grant }))).rejects.toThrow(/cumulative budget/);
+    expect(calls).toBe(1); expect(await readFile(path.join(root, "a.ts"), "utf8")).toBe("export const a = 1;\n");
+  });
+
+  it("fails closed on missing canonical usage before any later round", async () => {
+    const route = canonicalRoute(); let calls = 0; const adapter = canonicalAdapter(async () => { calls++; return responseAt({ id: "missing-usage", model: route.model, choices: [{ message: { content: "done" } }], usage: {} }, { url: targetUrl }); });
+    await expect(adapter.invoke(canonicalBound({ stage: "TEXT_EXPAND", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal" }))).rejects.toThrow(/usage|cache categories/);
+    expect(calls).toBe(1);
+  });
+
+  it("preserves a measured zero list estimate while provider-reported cost remains unavailable", async () => {
+    const route = canonicalRoute(); const adapter = canonicalAdapter(async () => responseAt({ id: "zero-usage", model: route.model, choices: [{ message: { content: "done" } }], usage: { prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0, prompt_cache_miss_tokens: 0, completion_tokens_details: { reasoning_tokens: 0 } } }, { url: targetUrl }));
+    const response = await adapter.invoke(canonicalBound({ stage: "TEXT_EXPAND", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal" }));
+    expect(response.estimatedListCostUsd).toBe(0); expect(response.providerReportedCostUsd).toBeNull(); expect(response.transportRounds?.[0].cache_status).toBe("none");
+  });
 });
 
 function testAdapter(options: { apiKey: string; fetchImpl: typeof fetch }): DeepSeekChatAdapter {
@@ -254,3 +309,22 @@ function responseAt(payload: unknown, options: { url?: string; redirected?: bool
   Object.defineProperty(response, "redirected", { value: options.redirected ?? false });
   return response;
 }
+
+function canonicalRoute(): RouteDecision {
+  return { ...decideRoute("EXECUTE", classifyTask("Fix a bounded parser bug")), maxOutputTokens: 1_000, maxToolTurns: 2, timeoutMs: 30_000 };
+}
+
+function canonicalBound(request: Omit<ProviderRequest, "routeBinding">, budgetPatch: Partial<RequestBudget> = {}, budgetState: ProviderBudgetState = zeroState()): ProviderRequest {
+  const readScope = request.executorCapabilities?.readManifest.map(item => item.path) ?? ["synthetic.txt"];
+  const writeScope = request.executorCapabilities?.writeScope ?? ["synthetic.txt"];
+  const legacy = buildLegacyRouteBinding(request.route, readScope, writeScope);
+  const { route_binding_hash: _hash, ...body } = legacy;
+  const requestBudget: RequestBudget = { ...body.request_budget, max_attempts: 2, max_provider_requests: 6, max_input_tokens: 20_000, max_output_tokens: request.route.maxOutputTokens, max_tool_calls: request.route.maxToolTurns, max_request_wall_time_ms: request.route.timeoutMs, max_wall_time_ms: 300_000, max_estimated_cost_usd: 0.02, billing_mode: "prepaid", ...budgetPatch };
+  return { ...request, contractProvenance: "canonical", budgetState, routeBinding: createRouteBinding({ ...body, request_budget: requestBudget }) };
+}
+
+function canonicalAdapter(fetchImpl: typeof fetch): DeepSeekChatAdapter {
+  return new DeepSeekChatAdapter({ credentialResolver: () => "synthetic", fetchImpl, now: () => new Date("2026-08-24T07:00:00.000Z") });
+}
+
+function zeroState(): ProviderBudgetState { return { attempts_used: 0, provider_requests_used: 0, input_tokens_used: 0, output_tokens_used: 0, wall_clock_time_ms_used: 0, estimated_list_cost_usd: 0 }; }

@@ -107,11 +107,11 @@ class RepairCountingModel extends MockModel {
 }
 
 class UnavailableUsageModel extends MockModel {
-  override async invoke(request: ProviderRequest): Promise<ProviderResponse> { return { ...(await super.invoke(request)), usageAvailability: { inputTokens: false, outputTokens: false, reasoningTokens: false } }; }
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> { return { ...(await super.invoke(request)), usageAvailability: { inputTokens: false, outputTokens: false, reasoningTokens: false, cacheHitTokens: false, cacheMissTokens: false } }; }
 }
 
 class PartialUsageModel extends MockModel {
-  override async invoke(request: ProviderRequest): Promise<ProviderResponse> { return { ...(await super.invoke(request)), usageAvailability: { inputTokens: true, outputTokens: true, reasoningTokens: false } }; }
+  override async invoke(request: ProviderRequest): Promise<ProviderResponse> { return { ...(await super.invoke(request)), usageAvailability: { inputTokens: true, outputTokens: true, reasoningTokens: false, cacheHitTokens: true, cacheMissTokens: true } }; }
 }
 
 class BadPreimageModel extends MockModel {
@@ -326,7 +326,7 @@ describe("approval workflow", () => {
     const subject = await workflowFixture(); const router = new RouterOrchestrator(new UnavailableUsageModel(), new MockLocal(), subject.store, undefined, subject.worktrees);
     const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const completed = await router.approve(planned.taskId, subject.main);
     const bundle = JSON.parse(await readFile(path.join(subject.store.root, completed.evidenceBundleReference!), "utf8"));
-    expect(bundle.usage_metrics).toEqual({ input_tokens: null, output_tokens: null, reasoning_tokens: null });
+    expect(bundle.usage_metrics).toEqual({ input_tokens: null, output_tokens: null, reasoning_tokens: null, cached_input_tokens: null, cache_write_tokens: null, cache_hit_tokens: null, cache_miss_tokens: null });
   });
 
   it("preserves known input/output usage when reasoning usage is unavailable", async () => {
@@ -391,7 +391,7 @@ describe("approval workflow", () => {
     ["protocol", { wire_protocol: "responses" }],
     ["auth", { auth_alias: "openai-cross-provider" }],
     ["reasoning", { reasoning_effort: "high" }],
-    ["budget", { request_budget: { max_input_tokens: 64_000, max_output_tokens: 1, max_tool_calls: 10, max_wall_time_ms: 300_000, max_estimated_cost_usd: null, billing_mode: "unknown" } }],
+    ["budget", { request_budget: { max_attempts: 2, max_provider_requests: 22, max_input_tokens: 64_000, max_output_tokens: 1, max_tool_calls: 10, max_request_wall_time_ms: 300_000, max_wall_time_ms: 6_600_000, max_estimated_cost_usd: null, billing_mode: "unknown" } }],
     ["read scope", { read_scope: ["src/other.ts"] }],
     ["write scope", { write_scope: ["src/other.ts"] }],
   ])("persists a hash-valid %s tuple mismatch as FAILED_BEFORE_SEND with zero credential/fetch", async (_name, patch) => {
