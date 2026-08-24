@@ -18,16 +18,19 @@ describe("scope guard", () => {
   it("supports bounded glob patterns", () => {
     expect(() => assertAllowedChanges(new Map(), new Map([["src/lib/a.ts", "x"]]), ["src/**/*.ts"])).not.toThrow();
   });
-  it("refuses an untracked symlink before reading its out-of-worktree target", async () => {
+  it("refuses an untracked symlink/junction before reading its out-of-worktree target", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "router-scope-"));
     try {
-      const repo = path.join(root, "repo"); const outside = path.join(root, "outside.txt"); await mkdir(repo); await writeFile(path.join(repo, "base.txt"), "base\n"); await writeFile(outside, "api_key=synthetic-outside-secret\n");
+      const repo = path.join(root, "repo"); await mkdir(repo); await writeFile(path.join(repo, "base.txt"), "base\n");
+      const outside = path.join(root, "outside-dir"); await mkdir(outside); await writeFile(path.join(outside, "data.txt"), "api_key=synthetic-outside-secret\n");
       await git(repo, ["init", "-b", "main"]); await git(repo, ["config", "user.name", "Synthetic Test"]); await git(repo, ["config", "user.email", "synthetic@example.invalid"]); await git(repo, ["add", "--", "base.txt"]); await git(repo, ["commit", "-m", "base"]);
-      try { await symlink(outside, path.join(repo, "linked.txt"), "file"); } catch (error) { if (process.platform === "win32" && (error as NodeJS.ErrnoException).code === "EPERM") return; throw error; }
-      // Windows can silently materialize an empty file instead of a real
-      // reparse point when the process lacks the "Create Symbolic Links"
-      // privilege, so only assert when a genuine symlink was produced.
-      if (process.platform === "win32" && !(await lstat(path.join(repo, "linked.txt"))).isSymbolicLink()) return;
+      // A file symlink needs the "Create Symbolic Links" privilege on Windows
+      // and silently degrades to an empty file without it. A directory junction
+      // needs no privilege and is still a reparse point, so it exercises the
+      // same out-of-worktree guard without elevation.
+      const link = path.join(repo, "linked");
+      await symlink(outside, link, process.platform === "win32" ? "junction" : "dir");
+      if (process.platform === "win32" && !(await lstat(link)).isSymbolicLink()) return;
       await expect(snapshotWorkingTree(repo)).rejects.toThrow(/symlink|reparse/);
     } finally { await rmrf(root); }
   });
