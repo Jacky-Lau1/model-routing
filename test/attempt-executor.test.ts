@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,7 +9,7 @@ import { stableHash } from "../src/canonical.js";
 import type { Stage } from "../src/types.js";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 
 async function fixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "router-attempt-"));

@@ -1,13 +1,14 @@
 import { PassThrough } from "node:stream";
 import { once } from "node:events";
 import { readFile, rm } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { runStdioMcpServer } from "../src/mcp.js";
 import { canonicalFixture, directoryHash } from "./router-fixture.js";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 
 describe("thin STDIO MCP", () => {
   it("drives the whole S7 flow through one foreground session without config registration or sentinel changes", async () => {
@@ -26,7 +27,7 @@ describe("thin STDIO MCP", () => {
     expect(initialized.result).toMatchObject({ protocolVersion: "2025-06-18", capabilities: { tools: { listChanged: false } } });
     expect(initialized.result.instructions).toMatch(/never send full chat history or hidden reasoning/i);
     const listed = await send(2, "tools/list");
-    expect(listed.result.tools.map((item: any) => item.name)).toEqual(["router.prepare", "router.execute", "router.status", "router.abort", "router.review_evidence", "router.finalize", "router.repair", "router.apply"]);
+    expect(listed.result.tools.map((item: any) => item.name)).toEqual(["router.prepare", "router.execute", "router.status", "router.abort", "router.review_evidence", "router.finalize", "router.repair", "router.apply", "router.pilot_report"]);
     expect(listed.result.tools.find((item: any) => item.name === "router.execute").annotations).toMatchObject({ idempotentHint: false, openWorldHint: true });
     expect(listed.result.tools.find((item: any) => item.name === "router.prepare").inputSchema.properties.task_package.properties.egress_policy.oneOf).toHaveLength(2);
     const preparedRpc = await send(3, "tools/call", { name: "router.prepare", arguments: { task_package: fixture.task } });

@@ -6,6 +6,12 @@
 
 ### Added
 
+- Part 1 离线工程闭环：canonical quality gate 运行时加载严格 schema 校验、hash-bound `QualityGatePolicy` 与 trusted command catalog，executable/argv/cwd/timeout/output/wall limits 与 catalog hash 进入 `QualityGateApprovalBoundary`；visible tests、本地 hidden acceptance、scope/secret/diff/freeze 结果并入 self-hashed `QualityAcceptanceProjection`。
+- 本地 hidden acceptance（`src/hidden-acceptance.ts`）：hidden tests/reference answer 位于模型不可读、不可外发的本地 root，只返回 bounded/redacted counts 与 opaque diagnostic hash；policy/catalog/command/fixture/base commit 变化使旧批准失效；默认空质量门不得用于真实 Pilot。
+- exact informed approval（`RouterApprovalSummary`）：prepare 摘要显式绑定 task/goal/TaskPackage hash、provider/adapter/model/endpoint/protocol/auth alias/reasoning、pricing version/hash/validity、classification/read-write scope、egress paths/content hashes/authorization/expiry、attempt/request/token/tool/wall/cost ceilings、roots、base commit/snapshot/isolation、hidden-data exclusion、redirect/escalation/retry/apply/commit/push 限制、stop conditions 与 approval expiry；任何字段变化生成新 hash 并在 provider side effect 前要求重新批准。
+- `PilotRunRecord`（`src/pilot-report.ts` + `materializePilotRecord`/`pilotReport` + MCP `router.pilot_report` + CLI `route router pilot-report`）：从 persisted state、AttemptRecord、EvidenceBundle、quality acceptance 与 Final Review 自动派生，调用者不得自由声明 success/usage/cost/violation/recommendation；原子持久化、self-hashed、绑定当前 EvidenceBundle，拒绝 tamper/replay；GPT telemetry 不可得时保留 null 与 `core_metrics_unavailable`，不写零或猜测。
+- 可安装离线候选：MCP 从编译产物启动、不依赖仓库 cwd 下的 tsx/devDependencies；`src/distribution.ts`、`src/installation.ts`、`src/doctor.ts` 与 `distribution_root` 消除用户名/OneDrive/AppData/bundled runtime 硬编码；提供 `config-preview`、`install --dry-run`、`uninstall --dry-run`、`doctor`、`pricing-verify`、`credential-status`；doctor 验证 build hash、roots、schema/policy/catalog、pricing expiry、credential alias availability、MCP block、enabled tools、state 可写性与 main workspace snapshot；uninstall 只删除 exact hash-matched block、配置漂移拒绝覆盖。
+- Part 1 测试（`test/part1-quality-gate.test.ts`、`test/part1-installation.test.ts`）：覆盖 visible/hidden pass/fail、hidden 泄漏、policy/catalog/executable/argv/hash 篡改、timeout、overflow、进程树、gate 修改 worktree、fixture/base commit 变化、roots 重叠、config/state 损坏、main workspace 不变，以及临时 Codex home 中 install → discovery → doctor → rollback。
 - 三部分 Agent Team 闭环入口与独立可复制 Prompt：离线工程闭环、真实链路/降费证明、日常能力硬化/发布验收；Part 2 固定以同质量下总可审计成本下降至少 30% 为硬门。
 - 当前阅读路径收敛为 README → ROADMAP → docs/16 → docs/17 → 当前 Part Prompt；S1–S9 文档保留为技术规格/证据，不再要求每个新 agent 重复全读。
 

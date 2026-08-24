@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, rmdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
@@ -18,7 +18,22 @@ import type { ProviderAdapter, ProviderRequest, ProviderResponse, QualityCommand
 import { CanonicalMockDeepSeek, canonicalFixture, requestBudget } from "./router-fixture.js";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
+
+// Windows fs.rm({ recursive: true }) can hang indefinitely on freshly created
+// trees (git repos and copied dist are the worst offenders). A manual
+// readdir+unlink+rmdir walk completes reliably, so cleanup uses it instead.
+async function rmrf(dir: string): Promise<void> {
+  let entries: import("node:fs").Dirent[];
+  try { entries = await readdir(dir, { withFileTypes: true }); }
+  catch { return; }
+  for (const entry of entries) {
+    const target = path.join(dir, entry.name);
+    if (entry.isDirectory()) await rmrf(target);
+    else await rm(target, { force: true }).catch(() => {});
+  }
+  await rmdir(dir).catch(() => {});
+}
 
 class ScenarioAdapter extends CanonicalMockDeepSeek {
   constructor(private readonly scenario: "success" | "scope" | "secret" | "usage" | "response_lost" | "preflight_failure" | "timeout" | "reset" | "failure" | "redaction" = "success") { super(); }
@@ -237,10 +252,13 @@ describe("S9 zero-cost Orchestrator-first end-to-end certification", () => {
 
   it("makes CLI and temporary STDIO MCP observe the same external core state", async () => {
     const fixture = await trackedFixture(); const config = path.join(fixture.root, "s9-runtime"); const state = path.join(fixture.root, "s9-shared-state"); await mkdir(config);
-    const files = { task: path.join(config, "task.json"), user: path.join(config, "user.json"), project: path.join(config, "project.json"), route: path.join(config, "route.json") };
+    const evidence = path.join(fixture.root, "s9-evidence"); const worktrees = path.join(fixture.root, "s9-worktrees"); const visible = path.join(fixture.root, "s9-visible-fixture"); const hidden = path.join(fixture.root, "s9-private-hidden");
+    await Promise.all([evidence, worktrees, visible, hidden].map(directory => mkdir(directory)));
+    const files = { task: path.join(config, "task.json"), user: path.join(config, "user.json"), project: path.join(config, "project.json"), route: path.join(config, "route.json"), qualityPolicy: path.join(config, "quality-policy.json"), qualityCatalog: path.join(config, "quality-catalog.json") };
     await Promise.all([writeFile(files.task, JSON.stringify(fixture.task)), writeFile(files.user, JSON.stringify(fixture.userPolicy)), writeFile(files.project, JSON.stringify(fixture.projectPolicy)), writeFile(files.route, JSON.stringify(fixture.routeProfile))]);
-    const runtime: RouterRuntimeFileOptions = { project: fixture.project, stateRoot: state, userPolicy: files.user, projectPolicy: files.project, routeProfile: files.route };
-    const cli = await runCli(["router", "prepare", files.task, "--project", runtime.project, "--state-root", runtime.stateRoot, "--user-policy", runtime.userPolicy, "--project-policy", runtime.projectPolicy, "--route-profile", runtime.routeProfile]);
+    await Promise.all([copyFile(path.resolve("config/quality-gate-policy.pilot.example.json"), files.qualityPolicy), copyFile(path.resolve("config/trusted-quality-command-catalog.example.json"), files.qualityCatalog)]);
+    const runtime: RouterRuntimeFileOptions = { project: fixture.project, stateRoot: state, evidenceRoot: evidence, worktreeRoot: worktrees, fixtureRoot: visible, hiddenRoot: hidden, qualityPolicy: files.qualityPolicy, qualityCatalog: files.qualityCatalog, mode: "pilot", userPolicy: files.user, projectPolicy: files.project, routeProfile: files.route };
+    const cli = await runCli(["router", "prepare", files.task, "--project", runtime.project, "--state-root", runtime.stateRoot, "--evidence-root", runtime.evidenceRoot!, "--worktree-root", runtime.worktreeRoot!, "--fixture-root", runtime.fixtureRoot!, "--hidden-root", runtime.hiddenRoot!, "--quality-policy", runtime.qualityPolicy!, "--quality-catalog", runtime.qualityCatalog!, "--user-policy", runtime.userPolicy, "--project-policy", runtime.projectPolicy, "--route-profile", runtime.routeProfile]);
     expect(cli.code).toBe(0); const cliStatus = JSON.parse(cli.stdout.trim());
     const core = await createRouterCoreFromFiles(runtime, { model_adapter: fixture.model, local_adapter: new LocalValidationAdapter({ evidenceRoot: state }) });
     const directMcp = await new RouterMcpServer(core).handle({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "router.status", arguments: { task_id: fixture.task.task_id } } }) as any;

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildMcpRegistrationPreview, restrictMcpProcessEnvironment, ROUTER_MCP_TOOL_NAMES } from "../src/mcp-registration.js";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 
 describe("temporary auditable Codex MCP registration", () => {
   it("previews an exact reversible block with no provider, model, auth, or inherited environment configuration", async () => {
@@ -19,7 +20,7 @@ describe("temporary auditable Codex MCP registration", () => {
     expect(fixture.preview.rollback).toEqual({ remove_exact_block_sha256_required: true, restart_required: true });
   });
 
-  it("discovers exactly eight router tools through a temporary Codex-home/config without touching auth.json", async () => {
+  it("discovers exactly nine router tools through a temporary Codex-home/config without touching auth.json", async () => {
     const fixture = await registrationFixture(); const config = path.join(fixture.codexHome, "config.toml"); const auth = path.join(fixture.codexHome, "auth.json");
     await writeFile(config, fixture.preview.toml_block, "utf8"); await writeFile(auth, "synthetic-auth-sentinel\n", "utf8");
     const beforeConfig = await digest(config); const beforeAuth = await digest(auth);

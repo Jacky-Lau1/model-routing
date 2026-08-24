@@ -1,4 +1,5 @@
 import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,7 +8,7 @@ import { stableHash } from "../src/canonical.js";
 import type { AttemptRecord, WorkflowRecord } from "../src/types.js";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 
 async function rootFixture(): Promise<string> { const root = await mkdtemp(path.join(os.tmpdir(), "router-atomic-")); roots.push(root); return root; }
 const now = "2026-08-21T00:00:00.000Z";

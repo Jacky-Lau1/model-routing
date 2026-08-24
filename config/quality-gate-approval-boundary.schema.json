@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/model-routing/quality-gate-approval-boundary.schema.json",
+  "title": "Exact approved canonical quality gate boundary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "run_id", "task_id", "worktree_id", "request_hash", "policy_hash", "catalog_hash", "fixture_hash", "hidden_root_hash", "base_commit", "worktree_root", "evidence_root", "commands", "max_wall_time_ms", "approval_boundary_hash"],
+  "properties": {
+    "version": { "const": 1 },
+    "run_id": { "$ref": "#/$defs/Identifier" },
+    "task_id": { "$ref": "#/$defs/Identifier" },
+    "worktree_id": { "$ref": "#/$defs/Identifier" },
+    "request_hash": { "$ref": "#/$defs/Hash" },
+    "policy_hash": { "$ref": "#/$defs/Hash" },
+    "catalog_hash": { "$ref": "#/$defs/Hash" },
+    "fixture_hash": { "$ref": "#/$defs/Hash" },
+    "hidden_root_hash": { "oneOf": [{ "$ref": "#/$defs/Hash" }, { "type": "null" }] },
+    "base_commit": { "type": "string", "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$" },
+    "worktree_root": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "evidence_root": { "type": "string", "minLength": 1, "maxLength": 4096 },
+    "commands": {
+      "type": "array",
+      "maxItems": 6,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command_id", "executable", "argv", "cwd", "timeout_ms", "max_output_bytes", "visibility"],
+        "properties": {
+          "command_id": { "enum": ["format_check", "lint", "typecheck", "unit_tests", "build", "project_acceptance"] },
+          "executable": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "argv": { "type": "array", "maxItems": 64, "items": { "type": "string", "maxLength": 4096 } },
+          "cwd": { "type": "string", "minLength": 1, "maxLength": 4096 },
+          "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 1800000 },
+          "max_output_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+          "visibility": { "enum": ["visible", "hidden"] }
+        }
+      }
+    },
+    "max_wall_time_ms": { "type": "integer", "minimum": 1, "maximum": 1800000 },
+    "approval_boundary_hash": { "$ref": "#/$defs/Hash" }
+  },
+  "$defs": {
+    "Hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "Identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }
+  }
+}

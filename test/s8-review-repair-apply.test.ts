@@ -1,4 +1,4 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, readdir, rm, rmdir, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import path from "node:path";
@@ -8,7 +8,7 @@ import type { FinalReviewDecision, RouterCoreService, RouterReviewEvidence } fro
 import { canonicalFixture } from "./router-fixture.js";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 
 class MockReviewer {
   constructor(private readonly decision: FinalReviewDecision | "UNAVAILABLE", private readonly summary: string) {}
@@ -124,6 +124,21 @@ describe("S8 foreground review, controlled repair, and explicit apply", () => {
     expect(await readFile(path.join(fixture.project, "src", "parser.ts"), "utf8")).toBe("export const parser = 77; // pre-existing user draft\n");
   });
 });
+
+// Windows fs.rm({ recursive: true }) can hang indefinitely on freshly created
+// trees (git repos and copied dist are the worst offenders). A manual
+// readdir+unlink+rmdir walk completes reliably, so cleanup uses it instead.
+async function rmrf(dir: string): Promise<void> {
+  let entries: import("node:fs").Dirent[];
+  try { entries = await readdir(dir, { withFileTypes: true }); }
+  catch { return; }
+  for (const entry of entries) {
+    const target = path.join(dir, entry.name);
+    if (entry.isDirectory()) await rmrf(target);
+    else await rm(target, { force: true }).catch(() => {});
+  }
+  await rmdir(dir).catch(() => {});
+}
 
 async function git(directory: string, args: string[]): Promise<string> {
   const child = spawn("git", args, { cwd: directory, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });

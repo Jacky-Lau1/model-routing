@@ -7,7 +7,7 @@ import { stableHash } from "./canonical.js";
 import { assertEvidenceBundle, assertPathScope, assertSafeRelativePath } from "./contracts.js";
 import { redactText } from "./redaction.js";
 import { hashContainedFile, hashScopeSnapshot, isAllowedPath, isForbiddenQualityPath, nonstandardGitIndexPaths, snapshotWorkingTree } from "./scope-guard.js";
-import type { EvidenceBundle, QualityCommandId, QualityCommandSpec, QualityGatePolicy, QualityGateReport, QualityGateRequest } from "./types.js";
+import type { EvidenceBundle, HiddenAcceptanceResult, QualityCommandId, QualityCommandSpec, QualityGatePolicy, QualityGateReport, QualityGateRequest } from "./types.js";
 
 const COMMAND_ORDER: QualityCommandId[] = ["format_check", "lint", "typecheck", "unit_tests", "build", "project_acceptance"];
 const HASH = /^[a-f0-9]{64}$/;
@@ -32,11 +32,28 @@ export interface QualityCommandExecution {
 export type QualityCommandRunner = (spec: QualityCommandSpec, cwd: string, maxOutputBytes: number) => Promise<QualityCommandExecution>;
 export type QualityGitRunner = (cwd: string, args: readonly string[], timeoutMs?: number) => Promise<QualityCommandExecution>;
 
+export interface RuntimeTrustedQualityCatalog {
+  version: 1;
+  catalog_id: string;
+  commands: Array<{
+    command_id: QualityCommandId;
+    executable: string;
+    argv: string[];
+    cwd_mode: "worktree";
+    timeout_ms: number;
+    max_output_bytes: number;
+    visibility: "visible" | "hidden";
+  }>;
+  catalog_hash: string;
+}
+
 export interface QualityGateOptions {
   policy: QualityGatePolicy;
   commandCatalog?: readonly QualityCommandSpec[];
+  trustedCatalog?: RuntimeTrustedQualityCatalog;
   evidenceRoot: string;
   runCommand?: QualityCommandRunner;
+  runHiddenAcceptance?: (request: QualityGateRequest, cwd: string) => Promise<HiddenAcceptanceResult>;
   runGit?: QualityGitRunner;
   now?: () => number;
   checkpoint?: (phase: "before_artifact" | "after_artifact") => void | Promise<void>;
@@ -99,6 +116,9 @@ export class LocalQualityGate {
   private readonly runGit: QualityGitRunner;
   private readonly now: () => number;
   private readonly checkpoint?: QualityGateOptions["checkpoint"];
+  private readonly commandOutputLimits = new Map<QualityCommandId, number>();
+  private readonly hiddenCommands = new Set<QualityCommandId>();
+  private readonly runHiddenAcceptance?: QualityGateOptions["runHiddenAcceptance"];
 
   constructor(options: QualityGateOptions) {
     assertQualityGatePolicy(options.policy);
@@ -108,18 +128,33 @@ export class LocalQualityGate {
     this.runGit = options.runGit ?? runGitCommand;
     this.now = options.now ?? Date.now;
     this.checkpoint = options.checkpoint;
+    this.runHiddenAcceptance = options.runHiddenAcceptance;
     for (const spec of options.commandCatalog ?? []) {
       assertCommandSpec(spec);
       if (this.catalog.has(spec.command_id)) throw new Error("Quality command catalog contains duplicate IDs");
       this.catalog.set(spec.command_id, Object.freeze({ ...spec, args: Object.freeze([...spec.args]) as unknown as string[] }));
     }
     for (const id of this.policy.command_ids) if (!this.catalog.has(id)) throw new Error(`Approved quality command ${id} has no trusted executable mapping`);
-    if (hashQualityCommandCatalog([...this.catalog.values()]) !== this.policy.command_registry_hash) throw new Error("Trusted quality command registry does not match the approved policy hash");
+    if (options.trustedCatalog) {
+      assertRuntimeTrustedCatalog(options.trustedCatalog);
+      if (options.trustedCatalog.catalog_hash !== this.policy.command_registry_hash) throw new Error("Trusted quality command catalog does not match the approved policy hash");
+      if (options.trustedCatalog.commands.length !== this.catalog.size) throw new Error("Runtime quality command mappings do not exactly match the trusted catalog");
+      for (const trusted of options.trustedCatalog.commands) {
+        const runtime = this.catalog.get(trusted.command_id);
+        if (!runtime || runtime.executable !== trusted.executable || runtime.timeout_ms !== trusted.timeout_ms || runtime.args.length !== trusted.argv.length || runtime.args.some((arg, index) => arg !== trusted.argv[index])) throw new Error(`Runtime quality command ${trusted.command_id} differs from the trusted catalog`);
+        if (trusted.max_output_bytes > this.policy.max_output_bytes || trusted.timeout_ms > this.policy.max_wall_time_ms) throw new Error(`Trusted quality command ${trusted.command_id} exceeds the approved policy limits`);
+        this.commandOutputLimits.set(trusted.command_id, trusted.max_output_bytes);
+        if (trusted.visibility === "hidden") this.hiddenCommands.add(trusted.command_id);
+      }
+    } else {
+      if (hashQualityCommandCatalog([...this.catalog.values()]) !== this.policy.command_registry_hash) throw new Error("Trusted quality command registry does not match the approved policy hash");
+      for (const id of this.policy.command_ids) this.commandOutputLimits.set(id, this.policy.max_output_bytes);
+    }
   }
 
   async preflight(request: QualityGateRequest, workingDirectory: string): Promise<void> {
     assertQualityGateRequest(request);
-    if (request.policy_hash !== this.policy.policy_hash || request.max_wall_time_ms !== this.policy.max_wall_time_ms) throw new Error("Quality gate request is bound to a different policy");
+    if (request.policy_hash !== this.policy.policy_hash || request.catalog_hash !== this.policy.command_registry_hash || request.max_wall_time_ms !== this.policy.max_wall_time_ms) throw new Error("Quality gate request is bound to a different policy or trusted command catalog");
     if (request.command_ids.length !== this.policy.command_ids.length || request.command_ids.some((id, index) => id !== this.policy.command_ids[index])) throw new Error("Quality gate request must use every approved command in deterministic order");
     const suppliedRoot = await lstat(path.resolve(workingDirectory));
     if (!suppliedRoot.isDirectory() || suppliedRoot.isSymbolicLink()) throw new Error("Quality gate worktree root must be a physical directory");
@@ -129,7 +164,7 @@ export class LocalQualityGate {
     for (const spec of this.catalog.values()) if (isWithin(workspace, path.resolve(spec.executable))) throw new Error("Trusted quality executables must be outside the target worktree");
   }
 
-  async run(request: QualityGateRequest, workingDirectory: string): Promise<QualityGateReport> {
+  async run(request: QualityGateRequest, workingDirectory: string, approvalBoundaryHash?: string): Promise<QualityGateReport> {
     const started = this.now(); const realStarted = Date.now(); const hardDeadline = realStarted + this.policy.max_wall_time_ms;
     await withinDeadline(this.preflight(request, workingDirectory), hardDeadline, "preflight");
     const root = await withinDeadline(realpath(workingDirectory), hardDeadline, "worktree root resolution");
@@ -169,6 +204,7 @@ export class LocalQualityGate {
 
     let stopped = gates.some(item => item.outcome === "failed");
     let budgetExceeded = false;
+    let hiddenAcceptanceResult: HiddenAcceptanceResult | null = null;
     for (const id of COMMAND_ORDER) {
       if (!request.command_ids.includes(id)) {
         gate(gates, id, "not_applicable", { reason: "not_required_by_approved_plan" });
@@ -191,13 +227,21 @@ export class LocalQualityGate {
         continue;
       }
       const effectiveSpec = { ...spec, timeout_ms: Math.min(spec.timeout_ms, remaining - 1_500) };
-      const execution = await withinDeadline(safeRun(this.runCommand, effectiveSpec, root, this.policy.max_output_bytes), hardDeadline, `command ${id}`);
-      const bounded = redactAndBound(`${execution.stdout}${execution.stderr}`, this.policy.max_output_bytes);
-      const outputSummary = redactText(bounded || "No command output was produced.", 1_000);
+      const commandOutputLimit = this.commandOutputLimits.get(id)!;
+      const hidden = this.hiddenCommands.has(id);
+      const hiddenResult = hidden
+        ? await withinDeadline(this.runHiddenAcceptance ? this.runHiddenAcceptance(request, root) : Promise.reject(new Error("Hidden acceptance runner is unavailable")), hardDeadline, `hidden command ${id}`)
+        : null;
+      if (hiddenResult) hiddenAcceptanceResult = hiddenResult;
+      const execution = hiddenResult
+        ? { exitCode: hiddenResult.exit_code, stdout: "", stderr: "", timedOut: hiddenResult.timed_out, overflowed: hiddenResult.output_overflowed }
+        : await withinDeadline(safeRun(this.runCommand, effectiveSpec, root, commandOutputLimit), hardDeadline, `command ${id}`);
+      const bounded = hiddenResult ? hiddenResult.diagnostic_hash : redactAndBound(`${execution.stdout}${execution.stderr}`, commandOutputLimit);
+      const outputSummary = hiddenResult ? hiddenResult.output_summary : redactText(bounded || "No command output was produced.", 1_000);
       const afterCommand = await withinDeadline(this.capture(root, request.base_commit, request.write_scope, hardDeadline), hardDeadline, `post-command capture ${id}`);
       const mutated = afterCommand.snapshotHash !== initial.snapshotHash;
       tests.push({ command_id: id, exit_code: execution.exitCode, output_hash: sha256(bounded), output_summary: outputSummary, timed_out: execution.timedOut, output_overflowed: execution.overflowed, worktree_mutated: mutated });
-      const passed = execution.exitCode === 0 && !execution.timedOut && !execution.overflowed && !mutated;
+      const passed = execution.exitCode === 0 && !execution.timedOut && !execution.overflowed && !mutated && (hiddenResult?.passed ?? true);
       gate(gates, id, passed ? "passed" : "failed", { exit_code: execution.exitCode, timed_out: execution.timedOut, output_overflowed: execution.overflowed, output_hash: sha256(bounded), diff_mutated: mutated });
       if (!passed) stopped = true;
     }
@@ -236,7 +280,10 @@ export class LocalQualityGate {
     const body: Omit<QualityGateReport, "report_hash"> = {
       version: 1,
       run_id: request.run_id, task_id: request.task_id, base_commit: request.base_commit, plan_hash: request.plan_hash, approval_hash: request.approval_hash,
-      isolation_hash: request.isolation_hash, worktree_id: request.worktree_id, policy_hash: request.policy_hash, effective_policy_hash: request.effective_policy_hash, max_wall_time_ms: request.max_wall_time_ms,
+      isolation_hash: request.isolation_hash, worktree_id: request.worktree_id, policy_hash: request.policy_hash,
+      approval_boundary_hash: approvalBoundaryHash ?? hiddenAcceptanceResult?.approval_boundary_hash ?? stableHash({ request_hash: hashQualityGateRequest(request), catalog_hash: request.catalog_hash, fixture_hash: request.fixture_hash, hidden_root_hash: request.hidden_root_hash }),
+      catalog_hash: request.catalog_hash, fixture_hash: request.fixture_hash, hidden_root_hash: request.hidden_root_hash,
+      effective_policy_hash: request.effective_policy_hash, max_wall_time_ms: request.max_wall_time_ms,
       request_hash: hashQualityGateRequest(request),
       passed,
       worktree_head: final.head,
@@ -253,6 +300,7 @@ export class LocalQualityGate {
       secret_scan_summary: { outcome: secret.outcome, findings: secret.newFindings, baseline_findings: secret.baselineFindings, new_findings: secret.newFindings },
       wall_clock_time_ms: wallClockTimeMs,
       redaction_notes: redactionNotes,
+      hidden_acceptance_result: hiddenAcceptanceResult,
     };
     const report: QualityGateReport = Object.freeze({ ...body, report_hash: stableHash(body) });
     assertQualityGateReportForRequest(report, request);
@@ -315,7 +363,7 @@ export class LocalQualityGate {
 export async function persistEvidenceBundle(evidenceRoot: string, bundle: EvidenceBundle): Promise<string> {
   assertEvidenceBundle(bundle);
   const root = path.resolve(evidenceRoot);
-  const request: QualityGateRequest = { run_id: bundle.run_id, task_id: bundle.task_id, base_commit: bundle.base_commit, plan_hash: bundle.task_package_hash, approval_hash: bundle.approval_hash, isolation_hash: bundle.isolation_hash, worktree_id: bundle.worktree_id, write_scope: ["evidence-only"], command_ids: [], policy_hash: bundle.quality_policy_hash, effective_policy_hash: bundle.policy_hash, max_wall_time_ms: bundle.quality_policy.max_wall_time_ms };
+  const request: QualityGateRequest = { run_id: bundle.run_id, task_id: bundle.task_id, base_commit: bundle.base_commit, plan_hash: bundle.task_package_hash, approval_hash: bundle.approval_hash, isolation_hash: bundle.isolation_hash, worktree_id: bundle.worktree_id, write_scope: ["evidence-only"], command_ids: [], policy_hash: bundle.quality_policy_hash, catalog_hash: bundle.quality_catalog_hash, fixture_hash: bundle.fixture_hash, hidden_root_hash: bundle.hidden_root_hash, effective_policy_hash: bundle.policy_hash, max_wall_time_ms: bundle.quality_policy.max_wall_time_ms };
   const directory = await ensureOwnedRunDirectory(root, request, true);
   const relative = `evidence/${bundle.run_id}/${bundle.bundle_hash}.json`;
   const bytes = Buffer.from(`${JSON.stringify(bundle, null, 2)}\n`, "utf8");
@@ -337,9 +385,11 @@ export async function readEvidenceArtifact(evidenceRoot: string, reference: stri
 export function assertQualityGateReport(value: unknown): asserts value is QualityGateReport {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("QualityGateReport must be an object");
   const report = value as Record<string, unknown>;
-  const keys = ["version", "run_id", "task_id", "base_commit", "plan_hash", "approval_hash", "isolation_hash", "worktree_id", "policy_hash", "effective_policy_hash", "max_wall_time_ms", "request_hash", "passed", "worktree_head", "files_changed", "content_snapshot_hash", "post_artifact_snapshot_hash", "worktree_snapshot_hash", "diff_hash", "diff_reference", "quality_gate_results", "tests_run", "scope_violations", "privacy_violations", "secret_scan_summary", "wall_clock_time_ms", "redaction_notes", "report_hash"];
+  const keys = ["version", "run_id", "task_id", "base_commit", "plan_hash", "approval_hash", "isolation_hash", "worktree_id", "policy_hash", "approval_boundary_hash", "catalog_hash", "fixture_hash", "hidden_root_hash", "effective_policy_hash", "max_wall_time_ms", "request_hash", "passed", "worktree_head", "files_changed", "content_snapshot_hash", "post_artifact_snapshot_hash", "worktree_snapshot_hash", "diff_hash", "diff_reference", "quality_gate_results", "tests_run", "scope_violations", "privacy_violations", "secret_scan_summary", "wall_clock_time_ms", "redaction_notes", "hidden_acceptance_result", "report_hash"];
   if (Object.keys(report).length !== keys.length || keys.some(key => !(key in report))) throw new Error("QualityGateReport has unknown or missing fields");
-  if (report.version !== 1 || !ID.test(String(report.run_id)) || !ID.test(String(report.task_id)) || !GIT_OBJECT.test(String(report.base_commit)) || !HASH.test(String(report.plan_hash)) || !HASH.test(String(report.approval_hash)) || !HASH.test(String(report.isolation_hash)) || !ID.test(String(report.worktree_id)) || !HASH.test(String(report.policy_hash)) || !HASH.test(String(report.effective_policy_hash)) || !HASH.test(String(report.request_hash)) || typeof report.passed !== "boolean" || typeof report.worktree_head !== "string" || !GIT_OBJECT.test(report.worktree_head) || typeof report.content_snapshot_hash !== "string" || !HASH.test(report.content_snapshot_hash) || !HASH.test(String(report.post_artifact_snapshot_hash)) || !HASH.test(String(report.worktree_snapshot_hash)) || typeof report.diff_hash !== "string" || !HASH.test(report.diff_hash) || !HASH.test(String(report.report_hash))) throw new Error("QualityGateReport identity is invalid");
+  if (report.version !== 1 || !ID.test(String(report.run_id)) || !ID.test(String(report.task_id)) || !GIT_OBJECT.test(String(report.base_commit)) || !HASH.test(String(report.plan_hash)) || !HASH.test(String(report.approval_hash)) || !HASH.test(String(report.isolation_hash)) || !ID.test(String(report.worktree_id)) || !HASH.test(String(report.policy_hash)) || !HASH.test(String(report.approval_boundary_hash)) || !HASH.test(String(report.catalog_hash)) || !HASH.test(String(report.fixture_hash)) || (report.hidden_root_hash !== null && !HASH.test(String(report.hidden_root_hash))) || !HASH.test(String(report.effective_policy_hash)) || !HASH.test(String(report.request_hash)) || typeof report.passed !== "boolean" || typeof report.worktree_head !== "string" || !GIT_OBJECT.test(report.worktree_head) || typeof report.content_snapshot_hash !== "string" || !HASH.test(report.content_snapshot_hash) || !HASH.test(String(report.post_artifact_snapshot_hash)) || !HASH.test(String(report.worktree_snapshot_hash)) || typeof report.diff_hash !== "string" || !HASH.test(report.diff_hash) || !HASH.test(String(report.report_hash))) throw new Error("QualityGateReport identity is invalid");
+  if (report.hidden_acceptance_result !== null && !validHiddenAcceptanceResult(report.hidden_acceptance_result)) throw new Error("QualityGateReport hidden acceptance result is invalid");
+  if (report.hidden_acceptance_result !== null && (report.hidden_acceptance_result.approval_boundary_hash !== report.approval_boundary_hash || report.hidden_acceptance_result.fixture_hash !== report.fixture_hash || report.hidden_acceptance_result.base_commit !== report.base_commit)) throw new Error("QualityGateReport hidden acceptance result is not bound to the report boundary, fixture, and base");
   assertSafeRelativePath(report.diff_reference, "QualityGateReport.diff_reference");
   assertStringArray(report.files_changed, true); (report.files_changed as string[]).forEach(item => assertSafeRelativePath(item, "QualityGateReport.files_changed")); uniqueStrings(report.files_changed as string[], "QualityGateReport.files_changed");
   if ([...(report.files_changed as string[])].sort().join("\0") !== (report.files_changed as string[]).join("\0")) throw new Error("QualityGateReport files must be sorted");
@@ -357,7 +407,7 @@ export function assertQualityGateReport(value: unknown): asserts value is Qualit
 
 export function assertQualityGateReportForRequest(report: QualityGateReport, request: QualityGateRequest): void {
   assertQualityGateRequest(request); assertQualityGateReport(report);
-  for (const field of ["run_id", "task_id", "base_commit", "plan_hash", "approval_hash", "isolation_hash", "worktree_id", "policy_hash", "effective_policy_hash", "max_wall_time_ms"] as const) if (report[field] !== request[field]) throw new Error(`QualityGateReport ${field} does not match the approved request`);
+  for (const field of ["run_id", "task_id", "base_commit", "plan_hash", "approval_hash", "isolation_hash", "worktree_id", "policy_hash", "catalog_hash", "fixture_hash", "hidden_root_hash", "effective_policy_hash", "max_wall_time_ms"] as const) if (report[field] !== request[field]) throw new Error(`QualityGateReport ${field} does not match the approved request`);
   if (report.request_hash !== hashQualityGateRequest(request)) throw new Error("QualityGateReport request hash does not match the approved write scope and command set");
   if (report.worktree_head !== request.base_commit || !report.diff_reference.startsWith(`evidence/${request.run_id}/`)) throw new Error("QualityGateReport worktree or artifact reference is not bound to the approved run");
   const expected = ["base_identity", "preapply_scope", "changed_files_scope", "forbidden_paths", "secret_scan", "diff_sanity", ...COMMAND_ORDER, "final_freeze", "evidence_artifact", "gate_budget"];
@@ -395,7 +445,8 @@ export function assertQualityGateReportForRequest(report: QualityGateReport, req
     else if (priorFailure || (budgetStoppedCommand && outcome === "not_run")) { if (outcome !== "not_run" || test) throw new Error(`QualityGateReport command ${id} should be not-run after a failed gate or exhausted budget`); priorFailure = true; }
     else {
       if (!["passed", "failed"].includes(outcome) || !test) throw new Error(`QualityGateReport command evidence is incomplete for ${id}`);
-      if ((outcome === "passed") !== (test.exit_code === 0 && !test.timed_out && !test.output_overflowed && !test.worktree_mutated)) throw new Error(`QualityGateReport command outcome contradicts diagnostics for ${id}`);
+      const diagnosticsPassed = test.exit_code === 0 && !test.timed_out && !test.output_overflowed && !test.worktree_mutated && (id !== "project_acceptance" || report.hidden_acceptance_result?.passed !== false);
+      if ((outcome === "passed") !== diagnosticsPassed) throw new Error(`QualityGateReport command outcome contradicts diagnostics for ${id}`);
       if (outcome === "failed") priorFailure = true;
     }
     observedTests.delete(id);
@@ -414,7 +465,7 @@ export function hashQualityGateRequest(request: QualityGateRequest): string {
 }
 
 function assertQualityGateRequest(request: QualityGateRequest): void {
-  if (!request || !ID.test(request.run_id) || !ID.test(request.task_id) || !GIT_OBJECT.test(request.base_commit) || !HASH.test(request.plan_hash) || !HASH.test(request.approval_hash) || !HASH.test(request.isolation_hash) || !ID.test(request.worktree_id) || !HASH.test(request.policy_hash) || !HASH.test(request.effective_policy_hash) || !Number.isInteger(request.max_wall_time_ms) || request.max_wall_time_ms < 1) throw new Error("Quality gate request identity is invalid");
+  if (!request || !ID.test(request.run_id) || !ID.test(request.task_id) || !GIT_OBJECT.test(request.base_commit) || !HASH.test(request.plan_hash) || !HASH.test(request.approval_hash) || !HASH.test(request.isolation_hash) || !ID.test(request.worktree_id) || !HASH.test(request.policy_hash) || !HASH.test(request.catalog_hash) || !HASH.test(request.fixture_hash) || (request.hidden_root_hash !== null && !HASH.test(request.hidden_root_hash)) || !HASH.test(request.effective_policy_hash) || !Number.isInteger(request.max_wall_time_ms) || request.max_wall_time_ms < 1) throw new Error("Quality gate request identity is invalid");
   assertPathScope(request.write_scope, "QualityGateRequest.write_scope");
   if (!Array.isArray(request.command_ids) || request.command_ids.some(id => !COMMAND_ORDER.includes(id)) || new Set(request.command_ids).size !== request.command_ids.length) throw new Error("Quality gate command IDs are invalid");
   if ([...request.command_ids].sort((a, b) => COMMAND_ORDER.indexOf(a) - COMMAND_ORDER.indexOf(b)).join("\0") !== request.command_ids.join("\0")) throw new Error("Quality gate command IDs must use deterministic order");
@@ -423,6 +474,23 @@ function assertQualityGateRequest(request: QualityGateRequest): void {
 function assertCommandSpec(spec: QualityCommandSpec): void {
   if (!COMMAND_ORDER.includes(spec.command_id) || !path.isAbsolute(spec.executable) || /[\0\r\n]/.test(spec.executable) || !Array.isArray(spec.args) || spec.args.some(arg => typeof arg !== "string" || /[\0\r\n]/.test(arg)) || !Number.isInteger(spec.timeout_ms) || spec.timeout_ms < 1) throw new Error("Trusted quality command mapping is invalid");
   if (spec.command_id === "format_check" && (spec.args.some(arg => /^(?:--write|--fix)$/i.test(arg)) || !spec.args.some(arg => /^(?:--check|--check-only)$/i.test(arg)))) throw new Error("Formatter command must be check-only");
+}
+
+function assertRuntimeTrustedCatalog(value: RuntimeTrustedQualityCatalog): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Trusted quality command catalog must be an object");
+  const keys = ["version", "catalog_id", "commands", "catalog_hash"];
+  if (Object.keys(value).length !== keys.length || keys.some(key => !(key in value))) throw new Error("Trusted quality command catalog has unknown or missing fields");
+  if (value.version !== 1 || !ID.test(value.catalog_id) || !HASH.test(value.catalog_hash) || !Array.isArray(value.commands)) throw new Error("Trusted quality command catalog identity is invalid");
+  let previous = -1;
+  for (const command of value.commands) {
+    const commandKeys = ["command_id", "executable", "argv", "cwd_mode", "timeout_ms", "max_output_bytes", "visibility"];
+    if (!command || typeof command !== "object" || Array.isArray(command) || Object.keys(command).length !== commandKeys.length || commandKeys.some(key => !(key in command))) throw new Error("Trusted quality command has unknown or missing fields");
+    const order = COMMAND_ORDER.indexOf(command.command_id);
+    if (order <= previous || !path.isAbsolute(command.executable) || path.resolve(command.executable) !== command.executable || /[\0\r\n]/.test(command.executable) || !Array.isArray(command.argv) || command.argv.length > 64 || command.argv.some(arg => typeof arg !== "string" || arg.length > 4096 || /[\0\r\n]/.test(arg)) || command.cwd_mode !== "worktree" || !Number.isInteger(command.timeout_ms) || command.timeout_ms < 1 || command.timeout_ms > 30 * 60_000 || !Number.isInteger(command.max_output_bytes) || command.max_output_bytes < 1 || command.max_output_bytes > 1024 * 1024 || !["visible", "hidden"].includes(command.visibility) || (command.visibility === "hidden" && command.command_id !== "project_acceptance")) throw new Error("Trusted quality command is invalid or reordered");
+    previous = order;
+  }
+  const { catalog_hash: _hash, ...body } = value;
+  if (stableHash(body) !== value.catalog_hash) throw new Error("Trusted quality command catalog hash does not match canonical content");
 }
 
 async function collectChanges(root: string, runGit: QualityGitRunner): Promise<ChangeEntry[]> {
@@ -595,6 +663,21 @@ function assertStringArray(value: unknown, paths: boolean): asserts value is str
 function uniqueStrings(values: string[], name: string): void { if (new Set(values).size !== values.length) throw new Error(`${name} must not contain duplicates`); }
 function validGate(value: unknown): boolean { const item = value as Record<string, unknown>; return Boolean(item && ID.test(String(item.gate_id)) && ["passed", "failed", "not_applicable", "not_run"].includes(String(item.outcome)) && HASH.test(String(item.evidence_hash)) && typeof item.summary === "string" && Object.keys(item).length === 4); }
 function validTest(value: unknown): boolean { const item = value as Record<string, unknown>; return Boolean(item && ID.test(String(item.command_id)) && Number.isInteger(item.exit_code) && HASH.test(String(item.output_hash)) && typeof item.output_summary === "string" && typeof item.timed_out === "boolean" && typeof item.output_overflowed === "boolean" && typeof item.worktree_mutated === "boolean" && Object.keys(item).length === 7); }
+function validHiddenAcceptanceResult(value: unknown): value is HiddenAcceptanceResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  const keys = ["version", "command_id", "approval_boundary_hash", "fixture_hash", "base_commit", "counts", "passed", "exit_code", "timed_out", "output_overflowed", "hidden_root_unchanged", "diagnostic_hash", "output_summary", "redaction_notes", "result_hash"];
+  if (Object.keys(item).length !== keys.length || keys.some(key => !(key in item)) || item.version !== 1 || item.command_id !== "project_acceptance" || !HASH.test(String(item.approval_boundary_hash)) || !HASH.test(String(item.fixture_hash)) || !GIT_OBJECT.test(String(item.base_commit)) || !HASH.test(String(item.diagnostic_hash)) || !HASH.test(String(item.result_hash))) return false;
+  const counts = item.counts as Record<string, unknown>;
+  if (!counts || Object.keys(counts).join("\0") !== "passed\0failed\0not_run" || Object.values(counts).some(number => !Number.isInteger(number) || (number as number) < 0 || (number as number) > 1_000_000)) return false;
+  if (typeof item.passed !== "boolean" || typeof item.timed_out !== "boolean" || typeof item.output_overflowed !== "boolean" || typeof item.hidden_root_unchanged !== "boolean" || !Number.isInteger(item.exit_code)) return false;
+  if (typeof item.output_summary !== "string" || Buffer.byteLength(item.output_summary) > 256 || !/^Hidden acceptance (?:passed|failed); detailed output remains local-only\.$/.test(item.output_summary)) return false;
+  if (!Array.isArray(item.redaction_notes) || item.redaction_notes.join("\0") !== "hidden_stdout_not_exported\0hidden_stderr_not_exported\0hidden_paths_not_exported\0reference_answer_not_exported") return false;
+  const expectedPassed = (counts.passed as number) > 0 && counts.failed === 0 && counts.not_run === 0 && item.exit_code === 0 && item.timed_out === false && item.output_overflowed === false && item.hidden_root_unchanged === true;
+  if (item.passed !== expectedPassed) return false;
+  const { result_hash: _hash, ...body } = item;
+  return stableHash(body) === item.result_hash;
+}
 
 async function safeRun(runner: QualityCommandRunner, spec: QualityCommandSpec, cwd: string, maxOutputBytes: number): Promise<QualityCommandExecution> {
   try { return await runner(spec, cwd, maxOutputBytes); }
@@ -603,6 +686,17 @@ async function safeRun(runner: QualityCommandRunner, spec: QualityCommandSpec, c
 
 async function runApprovedCommand(spec: QualityCommandSpec, cwd: string, maxOutputBytes: number): Promise<QualityCommandExecution> {
   return runProcess(spec.executable, spec.args, cwd, spec.timeout_ms, maxOutputBytes, {}, true);
+}
+
+/**
+ * Executes an already validated catalog entry without a shell. Callers must bind the exact
+ * executable, argv, cwd, timeout and output ceiling before invoking this primitive.
+ */
+export async function executeApprovedQualityCommand(spec: QualityCommandSpec, cwd: string, maxOutputBytes: number): Promise<QualityCommandExecution> {
+  assertCommandSpec(spec);
+  if (!path.isAbsolute(cwd) || path.resolve(cwd) !== cwd) throw new Error("Approved quality command cwd must be an exact absolute path");
+  if (!Number.isInteger(maxOutputBytes) || maxOutputBytes < 1 || maxOutputBytes > 1024 * 1024) throw new Error("Approved quality command output limit is invalid");
+  return runApprovedCommand(spec, cwd, maxOutputBytes);
 }
 
 async function runGitCommand(cwd: string, args: readonly string[], timeoutMs = 60_000): Promise<QualityCommandExecution> {

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, open, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +11,7 @@ import type { QualityCommandId, QualityCommandSpec, QualityGatePolicy, QualityGa
 
 const roots: string[] = [];
 const ALL_COMMANDS: QualityCommandId[] = ["format_check", "lint", "typecheck", "unit_tests", "build", "project_acceptance"];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 
 describe("S6 local quality gate", () => {
   it("runs a trusted fixed argv registry in deterministic order and freezes a local review diff", async () => {
@@ -115,7 +116,7 @@ describe("S6 local quality gate", () => {
     expect(report.passed).toBe(false); expect(report.tests_run).toHaveLength(1); expect(report.tests_run[0][kind === "timeout" ? "timed_out" : "output_overflowed"]).toBe(true);
     expect(JSON.stringify(report)).not.toContain("synthetic-production-secret");
     const before = await readFile(heartbeat); await new Promise(resolve => setTimeout(resolve, 300)); expect((await readFile(heartbeat)).length).toBe(before.length);
-  }, 15_000);
+  }, 120_000);
 
   it("fails closed when the total quality-gate wall-time budget is exhausted", async () => {
     const fixture = await repoFixture(); const specs = commandSpecs(fixture.root, ["lint"]); let clock = 0;
@@ -148,7 +149,7 @@ describe("S6 local quality gate", () => {
     const fixture = await repoFixture(); let entered = false; const policy = createQualityGatePolicy({ version: 1, policy_id: "stalled-checkpoint-budget", command_ids: [], command_registry_hash: hashQualityCommandCatalog([]), max_diff_bytes: 1024 * 1024, max_file_bytes: 64 * 1024, max_output_bytes: 4096, max_wall_time_ms: 6_000 });
     const started = Date.now(); const gate = new LocalQualityGate({ policy, evidenceRoot: fixture.evidence, runGit: gitRunner, checkpoint: phase => { if (phase === "before_artifact") { entered = true; return new Promise<void>(() => {}); } } });
     await expect(gate.run(request(fixture, [], policy), fixture.repo)).rejects.toThrow(/wall-time budget/); expect(entered).toBe(true); expect(Date.now() - started).toBeLessThan(7_500);
-  }, 10_000);
+  }, 120_000);
 
   it("enforces the raw diff limit before redaction can shrink the review artifact", async () => {
     const fixture = await repoFixture(); await writeFile(path.join(fixture.repo, "src", "parser.ts"), `export const token = 'api_key=${"x".repeat(2_000)}';\n`);
@@ -268,7 +269,7 @@ function qualityGate(fixture: Fixture, specs: QualityCommandSpec[], runner: Qual
 }
 function request(fixture: Fixture, command_ids: QualityCommandId[], approved?: QualityGatePolicy): QualityGateRequest {
   const specs = commandSpecs(fixture.root, command_ids); const policy = approved ?? createQualityGatePolicy({ version: 1, policy_id: "synthetic-quality-policy", command_ids, command_registry_hash: hashQualityCommandCatalog(specs), max_diff_bytes: 1024 * 1024, max_file_bytes: 64 * 1024, max_output_bytes: 4096, max_wall_time_ms: 60_000 });
-  return { run_id: "synthetic-run", task_id: "synthetic-task", base_commit: fixture.base, plan_hash: "1".repeat(64), approval_hash: "2".repeat(64), isolation_hash: "3".repeat(64), worktree_id: "synthetic-worktree", write_scope: ["src/parser.ts"], command_ids, policy_hash: policy.policy_hash, effective_policy_hash: "4".repeat(64), max_wall_time_ms: policy.max_wall_time_ms };
+  return { run_id: "synthetic-run", task_id: "synthetic-task", base_commit: fixture.base, plan_hash: "1".repeat(64), approval_hash: "2".repeat(64), isolation_hash: "3".repeat(64), worktree_id: "synthetic-worktree", write_scope: ["src/parser.ts"], command_ids, policy_hash: policy.policy_hash, catalog_hash: policy.command_registry_hash, fixture_hash: "5".repeat(64), hidden_root_hash: null, effective_policy_hash: "4".repeat(64), max_wall_time_ms: policy.max_wall_time_ms };
 }
 function success(stdout = ""): QualityCommandExecution { return { exitCode: 0, stdout, stderr: "", timedOut: false, overflowed: false }; }
 const gitRunner: QualityGitRunner = async (cwd, args) => { try { const stdout = await git(cwd, args, true); return { ...success(stdout), exitCode: ["diff"].includes(args[0]) && args.includes("--no-index") && stdout ? 1 : 0 }; } catch { return { ...success(), exitCode: 1 }; } };

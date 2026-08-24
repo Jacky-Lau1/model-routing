@@ -16,7 +16,7 @@
 | S9 | 已通过（2026-08-24） | 全 mock、临时 repo/state/worktree/MCP 的完整控制链矩阵；26/26 定向、25 files 368/368 全量 |
 | S10 preflight | 已整改 / BLOCKED（2026-08-24） | EvidenceBundle v3、逐轮成本/预算、Pilot report 和临时 MCP discovery 已离线通过；真实 tool discovery、credential 与公平 GPT-only telemetry 未满足 |
 | S10 | BLOCKED / 未授权 | 仅在 blocker 解除并经当次 exact hash-bound 授权后，才可考虑公开/合成有限 smoke/Pilot |
-| Part 1 | 下一步 | 接通真实质量命令、完整批准摘要、Pilot report、编译分发、doctor 与临时安装/回滚；全程离线 |
+| Part 1 | 已通过（2026-08-24） | canonical quality gate + 本地 hidden acceptance、exact informed approval、PilotRunRecord 接入 Core/CLI/MCP、可安装离线候选与 doctor、临时安装/发现/回滚；全程离线，零真实 provider/credential/config/MCP side effect |
 | Part 2 | 等待 Part 1 | 真实 MCP/credential、单任务 smoke、隔离 GPT-only 基线与 20–50 对 Pilot；总可审计成本下降至少 30% |
 | Part 3 | 等待 Part 2 `expand` | 多文件/私有 capability、Windows 隔离、事务恢复、fault injection 与 release-candidate 验收 |
 

@@ -204,7 +204,7 @@ export interface AttemptRecord {
 }
 
 export interface EvidenceBundle {
-  version: 3;
+  version: 4;
   bundle_id: string;
   run_id: string;
   task_id: string;
@@ -213,6 +213,12 @@ export interface EvidenceBundle {
   route_binding_hash: string;
   policy_hash: string;
   quality_policy_hash: string;
+  quality_approval_boundary_hash: string;
+  quality_catalog_hash: string;
+  fixture_hash: string;
+  hidden_root_hash: string | null;
+  acceptance_results: QualityAcceptanceProjection;
+  hidden_acceptance_result: HiddenAcceptanceResult | null;
   quality_policy: QualityGatePolicy;
   approval_hash: string;
   execution_context_hash: string;
@@ -284,6 +290,9 @@ export interface QualityGateRequest {
   write_scope: string[];
   command_ids: QualityCommandId[];
   policy_hash: string;
+  catalog_hash: string;
+  fixture_hash: string;
+  hidden_root_hash: string | null;
   effective_policy_hash: string;
   max_wall_time_ms: number;
 }
@@ -298,6 +307,10 @@ export interface QualityGateReport {
   isolation_hash: string;
   worktree_id: string;
   policy_hash: string;
+  approval_boundary_hash: string;
+  catalog_hash: string;
+  fixture_hash: string;
+  hidden_root_hash: string | null;
   effective_policy_hash: string;
   max_wall_time_ms: number;
   request_hash: string;
@@ -316,7 +329,44 @@ export interface QualityGateReport {
   secret_scan_summary: EvidenceBundle["secret_scan_summary"];
   wall_clock_time_ms: number;
   redaction_notes: string[];
+  hidden_acceptance_result: HiddenAcceptanceResult | null;
   report_hash: string;
+}
+
+export interface AcceptanceCounts { passed: number; failed: number; not_run: number }
+
+export interface HiddenAcceptanceResult {
+  version: 1;
+  command_id: "project_acceptance";
+  approval_boundary_hash: string;
+  fixture_hash: string;
+  base_commit: string;
+  counts: AcceptanceCounts;
+  passed: boolean;
+  exit_code: number;
+  timed_out: boolean;
+  output_overflowed: boolean;
+  hidden_root_unchanged: boolean;
+  diagnostic_hash: string;
+  output_summary: string;
+  redaction_notes: string[];
+  result_hash: string;
+}
+
+export interface QualityAcceptanceProjection {
+  version: 1;
+  approval_boundary_hash: string;
+  quality_report_hash: string;
+  fixture_hash: string;
+  base_commit: string;
+  visible_tests: AcceptanceCounts;
+  hidden_tests: AcceptanceCounts;
+  regression: boolean;
+  scope_passed: boolean;
+  secret_passed: boolean;
+  diff_passed: boolean;
+  freeze_passed: boolean;
+  result_hash: string;
 }
 
 export interface UserPolicy {
@@ -523,6 +573,7 @@ export interface PilotRunRecord {
   visible_tests: { passed: number; failed: number; not_run: number };
   hidden_tests: { passed: number; failed: number; not_run: number };
   regression: boolean;
+  hard_stop: boolean;
   repair_count: number;
   human_interventions: Array<{ type: HumanInterventionType; summary: string }>;
   automated_success: boolean;

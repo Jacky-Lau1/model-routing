@@ -21,3 +21,6 @@ Thumbs.db
 .idea/
 node_modules/
 dist/
+
+# Agent workspace data (session/memory state, not part of the repository)
+.workbuddy/

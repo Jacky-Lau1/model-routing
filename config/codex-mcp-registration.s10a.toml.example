@@ -2,8 +2,8 @@
 # buildMcpRegistrationPreview(...) before requesting configuration approval.
 [mcp_servers.codex_router]
 command = "C:\\CodexRouter\\runtime\\node.exe"
-args = ["--import", "tsx", "C:\\CodexRouter\\repository\\src\\mcp.ts", "--project", "C:\\CodexRouter\\pilot\\fixture-repo", "--state-root", "C:\\CodexRouter\\pilot\\state", "--user-policy", "C:\\CodexRouter\\repository\\config\\s10a-user-policy.template.json", "--project-policy", "C:\\CodexRouter\\repository\\config\\s10a-project-policy.template.json", "--route-profile", "C:\\CodexRouter\\repository\\config\\s10a-route-profile.template.json"]
-cwd = "C:\\CodexRouter\\repository"
-enabled_tools = ["router.prepare", "router.execute", "router.status", "router.abort", "router.review_evidence", "router.finalize", "router.repair", "router.apply"]
+args = ["C:\\CodexRouter\\distribution\\dist\\src\\mcp.js", "--mode", "pilot", "--project", "C:\\CodexRouter\\pilot\\fixture-repo", "--state-root", "C:\\CodexRouter\\pilot\\state", "--evidence-root", "C:\\CodexRouter\\pilot\\evidence", "--worktree-root", "C:\\CodexRouter\\pilot\\worktrees", "--fixture-root", "C:\\CodexRouter\\pilot\\visible-fixture", "--hidden-root", "C:\\CodexRouter\\pilot-private\\hidden", "--quality-policy", "C:\\CodexRouter\\distribution\\config\\quality-gate-policy.pilot.json", "--quality-catalog", "C:\\CodexRouter\\distribution\\config\\trusted-quality-command-catalog.json", "--user-policy", "C:\\CodexRouter\\distribution\\config\\user-policy.json", "--project-policy", "C:\\CodexRouter\\distribution\\config\\project-policy.json", "--route-profile", "C:\\CodexRouter\\distribution\\config\\route-profile.json"]
+cwd = "C:\\CodexRouter\\distribution"
+enabled_tools = ["router.prepare", "router.execute", "router.status", "router.abort", "router.review_evidence", "router.finalize", "router.repair", "router.apply", "router.pilot_report"]
 startup_timeout_sec = 20
 tool_timeout_sec = 300

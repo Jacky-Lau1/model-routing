@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
   [string]$RepositoryRoot,
+  [string]$DistributionRoot,
+  [string]$NodeExecutable,
   [switch]$SkipDesktop,
   [string[]]$ShortcutDirectories,
   [ValidateSet('Com', 'Mock')]
@@ -12,6 +14,10 @@ param(
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) { $RepositoryRoot = Split-Path -Parent $PSScriptRoot }
 $RepositoryRoot = [IO.Path]::GetFullPath($RepositoryRoot)
+if ([string]::IsNullOrWhiteSpace($DistributionRoot)) { $DistributionRoot = $RepositoryRoot }
+$DistributionRoot = [IO.Path]::GetFullPath($DistributionRoot)
+if ([string]::IsNullOrWhiteSpace($NodeExecutable)) { throw 'NodeExecutable is required; runtime discovery is intentionally disabled.' }
+$NodeExecutable = [IO.Path]::GetFullPath($NodeExecutable)
 $launcher = Join-Path $RepositoryRoot 'scripts\router-terminal.ps1'
 if (-not (Test-Path -LiteralPath $launcher)) { throw "Launcher not found: $launcher" }
 
@@ -42,14 +48,14 @@ $shell = if ($ShortcutBackend -eq 'Com' -and -not $DryRun) { New-Object -ComObje
 foreach ($directory in $ShortcutDirectories) {
   foreach ($entry in $entries) {
     $shortcutPath = Join-Path $directory "$($entry.Name).lnk"
-    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -Mode $($entry.Mode)"
+    $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$launcher`" -DistributionRoot `"$DistributionRoot`" -NodeExecutable `"$NodeExecutable`""
     if (-not $DryRun) {
       New-Item -ItemType Directory -Path $directory -Force | Out-Null
       if ($ShortcutBackend -eq 'Com') {
         $shortcut = $shell.CreateShortcut($shortcutPath)
         $shortcut.TargetPath = 'powershell.exe'
         $shortcut.Arguments = $arguments
-        $shortcut.WorkingDirectory = $RepositoryRoot
+        $shortcut.WorkingDirectory = $DistributionRoot
         $shortcut.IconLocation = "$IconPath,0"
         $shortcut.Description = $entry.Description
         $shortcut.Save()
@@ -59,7 +65,7 @@ foreach ($directory in $ShortcutDirectories) {
           Name = $entry.Name
           TargetPath = 'powershell.exe'
           Arguments = $arguments
-          WorkingDirectory = $RepositoryRoot
+          WorkingDirectory = $DistributionRoot
           IconLocation = "$IconPath,0"
           Description = $entry.Description
         } | ConvertTo-Json | Set-Content -LiteralPath $mockPath -Encoding utf8

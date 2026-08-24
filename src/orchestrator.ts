@@ -215,7 +215,9 @@ export class RouterOrchestrator {
       qualityGate: {
         run_id: lease.binding.run_id, task_id: state.taskId, base_commit: lease.binding.base_commit, plan_hash: stableHash(state.plan), approval_hash: approvalHash,
         isolation_hash: lease.binding.isolation_hash, worktree_id: lease.binding.worktree_id, write_scope: [...state.plan.writeFiles], command_ids: [...this.qualityPolicy.command_ids],
-        policy_hash: this.qualityPolicy.policy_hash, effective_policy_hash: effectivePolicyHash, max_wall_time_ms: this.qualityPolicy.max_wall_time_ms,
+        policy_hash: this.qualityPolicy.policy_hash, catalog_hash: this.qualityPolicy.command_registry_hash,
+        fixture_hash: stableHash({ provenance: "legacy_bridge", project: lease.binding.repository_id }), hidden_root_hash: null,
+        effective_policy_hash: effectivePolicyHash, max_wall_time_ms: this.qualityPolicy.max_wall_time_ms,
       },
     } satisfies ProviderRequest;
     let parsed: QualityGateReport | undefined;
@@ -257,10 +259,28 @@ export class RouterOrchestrator {
     const pricedBands = modelRounds.map(item => item.pricing_time_band).filter((item): item is NonNullable<typeof item> => item !== null);
     const executeWall = sumLegacyRoundWall(modelAttempts.filter(item => item.stage === "EXECUTE").flatMap(item => item.transport_rounds));
     const repairWall = sumLegacyRoundWall(modelAttempts.filter(item => item.stage === "REPAIR").flatMap(item => item.transport_rounds));
+    const visible = { passed: 0, failed: 0, not_run: 0 };
+    for (const id of this.qualityPolicy.command_ids) {
+      if (id === "project_acceptance") continue;
+      const outcome = report.quality_gate_results.find(item => item.gate_id === id)?.outcome;
+      if (outcome === "passed") visible.passed += 1;
+      else if (outcome === "failed") visible.failed += 1;
+      else visible.not_run += 1;
+    }
+    const acceptanceBody = {
+      version: 1 as const, approval_boundary_hash: report.approval_boundary_hash, quality_report_hash: report.report_hash,
+      fixture_hash: report.fixture_hash, base_commit: report.base_commit, visible_tests: visible, hidden_tests: { passed: 0, failed: 0, not_run: 1 },
+      regression: true, scope_passed: report.scope_violations.length === 0, secret_passed: report.secret_scan_summary.outcome === "passed" && report.secret_scan_summary.new_findings === 0,
+      diff_passed: report.quality_gate_results.find(item => item.gate_id === "diff_sanity")?.outcome === "passed" && report.quality_gate_results.find(item => item.gate_id === "evidence_artifact")?.outcome === "passed",
+      freeze_passed: report.quality_gate_results.find(item => item.gate_id === "final_freeze")?.outcome === "passed" && report.content_snapshot_hash === report.post_artifact_snapshot_hash,
+    };
     const input = {
-      version: 3 as const, bundle_id: `bundle-${stableHash({ run: lease.binding.run_id, content: report.content_snapshot_hash, round: state.repairAttempts }).slice(0, 24)}`,
+      version: 4 as const, bundle_id: `bundle-${stableHash({ run: lease.binding.run_id, content: report.content_snapshot_hash, round: state.repairAttempts }).slice(0, 24)}`,
       run_id: lease.binding.run_id, task_id: state.taskId, contract_provenance: "legacy_bridge" as const,
-      task_package_hash: taskProjectionHash, route_binding_hash: state.plan!.routeBinding.route_binding_hash, policy_hash: effectivePolicyHash, quality_policy_hash: this.qualityPolicy.policy_hash, quality_policy: { ...this.qualityPolicy, command_ids: [...this.qualityPolicy.command_ids] },
+      task_package_hash: taskProjectionHash, route_binding_hash: state.plan!.routeBinding.route_binding_hash, policy_hash: effectivePolicyHash, quality_policy_hash: this.qualityPolicy.policy_hash,
+      quality_approval_boundary_hash: report.approval_boundary_hash, quality_catalog_hash: report.catalog_hash, fixture_hash: report.fixture_hash, hidden_root_hash: null,
+      acceptance_results: { ...acceptanceBody, result_hash: stableHash(acceptanceBody) }, quality_policy: { ...this.qualityPolicy, command_ids: [...this.qualityPolicy.command_ids] },
+      hidden_acceptance_result: null,
       approval_hash: approvalHash, execution_context_hash: executionContextHash, isolation_hash: lease.binding.isolation_hash, worktree_id: lease.binding.worktree_id,
       base_commit: lease.binding.base_commit, worktree_head: report.worktree_head,
       quality_request_hash: report.request_hash, quality_report_hash: report.report_hash, quality_passed: report.passed, quality_write_scope: [...state.plan!.writeFiles], quality_command_ids: [...this.qualityPolicy.command_ids],

@@ -2,7 +2,7 @@
 
 > 当前唯一执行入口。旧 S0–S10「一个阶段一个新对话」方式已经完成其历史使命，由 Git 历史保留；从现在起只按本文的三个部分推进。
 >
-> 当前状态：S0–S9 mock/synthetic 阶段门通过，S10 preflight 已完成离线整改但仍为 `BLOCKED`。真实 MCP、credential、provider 请求、成本对照、apply、commit 和 push 都必须遵守当次授权边界。
+> 当前状态：S0–S9 mock/synthetic 阶段门通过；Part 1 离线工程闭环已通过（全程离线）。S10 preflight 仍为 `BLOCKED`，真实 MCP、credential、provider 请求、成本对照、apply、commit 和 push 都必须遵守当次授权边界。
 
 ## 目标
 
@@ -58,6 +58,8 @@
 
 阶段门：typecheck、全量测试、schema/examples、diff check、外置 build 和临时安装矩阵全部通过；EvidenceBundle 能证明 visible/hidden gate 实际运行；没有真实 API、credential 或真实 Codex 配置变更。
 
+> 状态：**已通过（2026-08-24）**。Part 1 定向 17/17、S8 7/7、S9 26/26、全量 29 files 414/414、schema/examples、`git diff --check`、外置 build 与临时安装/发现/回滚全部通过；真实 provider/API、credential、config/MCP 变更均为零。证据见 `logs/routing-validation-log.md` 的 Part 1 command evidence 与 `docs/08-decisions.md` ADR-022。
+
 ## Part 2｜真实链路与降费证明
 
 入口：[`prompts/part-2-live-routing-and-cost-proof.md`](../prompts/part-2-live-routing-and-cost-proof.md)
@@ -90,4 +92,4 @@
 
 ## 当前启动点
 
-下一次新对话应从 Part 1 开始。Part 2 和 Part 3 的 Prompt 已准备好，但前置阶段门未通过时不得提前执行真实配置、credential、API 或能力扩展。
+Part 1 离线工程闭环已通过，下一次新对话应从 [Part 2 真实链路与降费证明](prompts/part-2-live-routing-and-cost-proof.md) 开始。Part 2 和 Part 3 的 Prompt 已准备好，但前置阶段门未通过时不得提前执行真实配置、credential、API 或能力扩展。

@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm, utimes } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,7 +8,7 @@ import { StateStore } from "../src/persistence.js";
 import type { RunState } from "../src/types.js";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 
 async function fixture(state: RunState["state"] = "WAITING_APPROVAL") {
   const root = await mkdtemp(path.join(os.tmpdir(), "router-test-")); roots.push(root);

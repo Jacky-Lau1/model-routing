@@ -1,68 +1,17 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { runRoutingBenchmark } from "./benchmark.js";
-import { loadDeepSeekApiKey } from "./credentials.js";
-import { RouterOrchestrator } from "./orchestrator.js";
-import { StateStore } from "./persistence.js";
-import { CodexCliAdapter } from "./providers/codex-cli.js";
-import { DeepSeekChatAdapter } from "./providers/deepseek-chat.js";
-import { LocalValidationAdapter } from "./providers/local.js";
-import { DEFAULT_QUALITY_GATE_POLICY } from "./quality-gate.js";
-import { RoutingProviderAdapter } from "./providers/routing.js";
-import { runLiveBenchmark } from "./live-benchmark.js";
+import { PRICING_CATALOG, type PricingCatalog } from "./cost.js";
+import { credentialStatus, runDoctor, verifyPricing, type DoctorInput } from "./doctor.js";
+import { sha256File } from "./distribution.js";
+import { buildInstallPreview, buildUninstallPreview } from "./installation.js";
+import { buildMcpRegistrationPreview, type McpRegistrationInput } from "./mcp-registration.js";
 import { createRouterCoreFromFiles, readRouterJsonFile, type RouterRuntimeFileOptions } from "./router-runtime.js";
 import { redactError } from "./redaction.js";
-import type { Complexity, ProviderAdapter, Risk, SensitivityClass, TaskKind } from "./types.js";
 
 const program = new Command();
-program.name("route").description("Orchestrator-first, fail-closed model router").version("0.1.0");
-
-function services(stateRoot?: string) {
-  const store = new StateStore(stateRoot ? path.resolve(stateRoot) : undefined);
-  const openai = new CodexCliAdapter({ executable: process.env.CODEX_CLI_PATH });
-  const deepseek = new DeepSeekChatAdapter({ credentialResolver: authAlias => loadDeepSeekApiKey(authAlias) });
-  const providers = new RoutingProviderAdapter(new Map<string, ProviderAdapter>([["openai-codex", openai], ["deepseek", deepseek]]));
-  const local = new LocalValidationAdapter({ policy: DEFAULT_QUALITY_GATE_POLICY, evidenceRoot: store.root });
-  return { store, router: new RouterOrchestrator(providers, local, store, undefined, undefined, DEFAULT_QUALITY_GATE_POLICY) };
-}
-
-program.command("auto")
-  .description("Classify and plan a task; stops for approval")
-  .argument("<objective>")
-  .option("--project <path>", "target project", process.cwd())
-  .option("--state-root <path>")
-  .option("--kind <kind>", "code, text, or visual")
-  .option("--complexity <level>", "normal or complex")
-  .option("--risk <level>", "normal or high")
-  .option("--sensitivity <class>", "normal, private, or restricted")
-  .action(async (objective, options) => {
-    const { router } = services(options.stateRoot);
-    const state = await router.auto(objective, { projectDirectory: path.resolve(options.project), profile: compact({ kind: options.kind as TaskKind, complexity: options.complexity as Complexity, risk: options.risk as Risk, sensitivity: options.sensitivity as SensitivityClass }) });
-    print({ taskId: state.taskId, state: state.state, profile: state.profile, plan: state.plan, next: `route approve ${state.taskId} --project ${JSON.stringify(path.resolve(options.project))}` });
-  });
-
-program.command("approve")
-  .description("Approve the frozen plan and run execution, validation, and review")
-  .argument("<task-id>")
-  .option("--project <path>", "target project", process.cwd())
-  .option("--state-root <path>")
-  .action(async (taskId, options) => print(await services(options.stateRoot).router.approve(taskId, path.resolve(options.project))));
-
-program.command("revise")
-  .description("Invalidate the old approval and regenerate a plan")
-  .argument("<task-id>").argument("<instruction>")
-  .option("--project <path>", "target project", process.cwd()).option("--state-root <path>")
-  .action(async (taskId, instruction, options) => print(await services(options.stateRoot).router.revise(taskId, instruction, path.resolve(options.project))));
-
-program.command("status").argument("[task-id]").option("--state-root <path>")
-  .action(async (taskId, options) => { const store = services(options.stateRoot).store; print(taskId ? await store.load(taskId) : await store.list()); });
-
-program.command("resume").argument("<task-id>").option("--state-root <path>")
-  .action(async (taskId, options) => { const state = await services(options.stateRoot).store.load(taskId); print({ ...state, next: nextAction(state.state, taskId) }); });
-
-program.command("abort").argument("<task-id>").option("--state-root <path>")
-  .action(async (taskId, options) => print(await services(options.stateRoot).router.abort(taskId)));
+program.name("route").description("Canonical fail-closed Router and offline installation diagnostics").version("0.1.0");
 
 const router = program.command("router").description("Canonical structured Router core commands used by the foreground GPT workflow");
 
@@ -98,31 +47,44 @@ addRouterRuntimeOptions(router.command("apply").description("Explicitly apply th
   .argument("<task-id>").requiredOption("--evidence-bundle-hash <sha256>"))
   .action(async (taskId, options) => printStructured(await (await structuredServices(options)).apply(taskId, options.evidenceBundleHash)));
 
-program.command("benchmark").option("--iterations <count>", "runs per routing case", "10")
-  .action(options => { const result = runRoutingBenchmark(Number.parseInt(options.iterations, 10)); print(result); if (!result.passed) process.exitCode = 1; });
+addRouterRuntimeOptions(router.command("pilot-report").description("Read the immutable PilotRunRecord derived from current durable evidence").argument("<task-id>"))
+  .action(async (taskId, options) => printStructured(await (await structuredServices(options)).pilotReport(taskId)));
 
-program.command("live-benchmark").description("Explicit real-API benchmark; never part of install or default checks")
-  .option("--keep-workspace", "retain the temporary fixture for debugging")
-  .option("--output-directory <path>", "report directory")
-  .action(async options => { const result = await runLiveBenchmark({ keepWorkspace: Boolean(options.keepWorkspace), outputDirectory: options.outputDirectory }); print(result); if (!result.acceptancePassed) process.exitCode = 1; });
-
-program.command("cleanup").option("--dry-run").option("--older-than <duration>", "for example 7d", "7d").option("--state-root <path>")
-  .action(async options => { const days = parseDays(options.olderThan); const removed = await services(options.stateRoot).store.cleanup(days, Boolean(options.dryRun)); print({ dryRun: Boolean(options.dryRun), olderThanDays: days, removed }); });
+program.command("config-preview").description("Show an exact hash-bound MCP configuration preview without writing").argument("<request-json>")
+  .action(async file => print(await installPreview(file)));
+program.command("install").description("Offline install preview only; never writes Codex config").requiredOption("--dry-run").argument("<request-json>")
+  .action(async file => print(await installPreview(file)));
+program.command("uninstall").description("Offline exact-block uninstall preview only; refuses drift").requiredOption("--dry-run").argument("<request-json>")
+  .action(async file => { const request = await objectFile(file); const configPath = stringField(request.config_path, "config_path"); print(buildUninstallPreview({ config_path: configPath, current_config: await readOptionalText(configPath), server_name: stringField(request.server_name, "server_name"), expected_managed_block: stringField(request.expected_managed_block, "expected_managed_block"), expected_managed_block_sha256: stringField(request.expected_managed_block_sha256, "expected_managed_block_sha256") })); });
+program.command("doctor").description("Run the fully offline installation and workspace doctor").argument("<request-json>")
+  .action(async file => { const request = await objectFile(file); print(await runDoctor({ ...request, now: new Date(stringField(request.now, "now")) } as unknown as DoctorInput)); });
+program.command("pricing-verify").description("Verify pricing hash and validity window").option("--catalog <json>").requiredOption("--at <iso>")
+  .action(async options => print(verifyPricing(options.catalog ? await readRouterJsonFile(options.catalog) as PricingCatalog : PRICING_CATALOG, new Date(options.at))));
+program.command("credential-status").description("Report credential alias names only; never reads values").requiredOption("--required <aliases>").option("--available <aliases>", "comma-separated locally attested aliases", "")
+  .action(options => print(credentialStatus({ required_aliases: csv(options.required), available_aliases: csv(options.available) })));
 
 program.parseAsync().catch(error => { console.error(JSON.stringify({ error: redactError(error) })); process.exitCode = 1; });
 
-function compact<T extends object>(value: T): Partial<T> { return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as Partial<T>; }
 function print(value: unknown): void { process.stdout.write(`${JSON.stringify(value, null, 2)}\n`); }
 function printStructured(value: unknown): void { process.stdout.write(`${JSON.stringify(value)}\n`); }
 function addRouterRuntimeOptions(command: Command): Command {
   return command.requiredOption("--project <path>", "target Git project")
     .requiredOption("--state-root <path>", "external Router state root")
+    .requiredOption("--evidence-root <path>", "external EvidenceBundle root")
+    .requiredOption("--worktree-root <path>", "external managed worktree root")
+    .requiredOption("--fixture-root <path>", "hash-bound visible fixture root")
+    .requiredOption("--hidden-root <path>", "model-inaccessible hidden acceptance root")
+    .requiredOption("--quality-policy <path>", "strict self-hashed QualityGatePolicy JSON")
+    .requiredOption("--quality-catalog <path>", "strict self-hashed trusted command catalog JSON")
     .requiredOption("--user-policy <path>", "external hashed UserPolicy JSON")
     .requiredOption("--project-policy <path>", "hashed ProjectPolicy JSON")
     .requiredOption("--route-profile <path>", "bound Direct DeepSeek route profile JSON");
 }
 function structuredServices(options: Record<string, string>) {
-  return createRouterCoreFromFiles({ project: options.project, stateRoot: options.stateRoot, userPolicy: options.userPolicy, projectPolicy: options.projectPolicy, routeProfile: options.routeProfile } satisfies RouterRuntimeFileOptions);
+  return createRouterCoreFromFiles({ project: options.project, stateRoot: options.stateRoot, evidenceRoot: options.evidenceRoot, worktreeRoot: options.worktreeRoot, fixtureRoot: options.fixtureRoot, hiddenRoot: options.hiddenRoot, qualityPolicy: options.qualityPolicy, qualityCatalog: options.qualityCatalog, mode: "pilot", userPolicy: options.userPolicy, projectPolicy: options.projectPolicy, routeProfile: options.routeProfile } satisfies RouterRuntimeFileOptions);
 }
-function parseDays(value: string): number { const match = /^(\d+)d$/.exec(value); if (!match) throw new Error("Duration must use Nd format, for example 7d"); return Number.parseInt(match[1], 10); }
-function nextAction(state: string, taskId: string): string { if (state === "WAITING_APPROVAL") return `route approve ${taskId}`; if (state === "WAITING_REAPPROVAL") return `route revise ${taskId} <instruction>`; if (["COMPLETED", "ABORTED"].includes(state)) return "none"; return `route status ${taskId}`; }
+async function installPreview(file: string) { const request = await objectFile(file); const registrationInput = request.registration as McpRegistrationInput; if (!registrationInput || registrationInput.runtime_mode !== "pilot") throw new Error("Install candidate registration must use pilot mode"); const distribution = path.resolve(stringField(registrationInput.distribution_root, "distribution_root")); const registration = buildMcpRegistrationPreview(registrationInput, await sha256File(path.join(distribution, "dist", "src", "mcp.js"))); const configPath = stringField(request.config_path, "config_path"); return buildInstallPreview({ config_path: configPath, current_config: await readOptionalText(configPath), registration }); }
+async function objectFile(file: string): Promise<Record<string, unknown>> { const value = await readRouterJsonFile(file); if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Request JSON must be an object"); return value as Record<string, unknown>; }
+async function readOptionalText(file: string): Promise<string> { return readFile(path.resolve(file), "utf8").catch(error => { if ((error as NodeJS.ErrnoException).code === "ENOENT") return ""; throw error; }); }
+function stringField(value: unknown, name: string): string { if (typeof value !== "string" || !value || /[\r\n\0]/.test(value)) throw new Error(`${name} must be a safe non-empty string`); return value; }
+function csv(value: string): string[] { return value === "" ? [] : value.split(",").map(item => item.trim()).filter(Boolean); }

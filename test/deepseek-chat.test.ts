@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +14,7 @@ import type { ProviderBudgetState, ProviderRequest, RequestBudget, RouteDecision
 
 const roots: string[] = [];
 const targetUrl = `${DEEPSEEK_ENDPOINT_ORIGIN}${DEEPSEEK_ENDPOINT_PATH}`;
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 
 describe("DeepSeek official Chat Completions adapter", () => {
   it("replays reasoning_content across tool-call turns in memory", async () => {

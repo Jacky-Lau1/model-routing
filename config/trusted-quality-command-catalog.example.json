@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "catalog_id": "synthetic-part1-pilot",
+  "commands": [
+    {
+      "command_id": "typecheck",
+      "executable": "C:\\router-tools\\node.exe",
+      "argv": ["C:\\router-tools\\typescript\\tsc.js", "--noEmit"],
+      "cwd_mode": "worktree",
+      "timeout_ms": 120000,
+      "max_output_bytes": 65536,
+      "visibility": "visible"
+    },
+    {
+      "command_id": "unit_tests",
+      "executable": "C:\\router-tools\\node.exe",
+      "argv": ["C:\\router-tools\\vitest\\vitest.mjs", "run", "--no-cache"],
+      "cwd_mode": "worktree",
+      "timeout_ms": 300000,
+      "max_output_bytes": 131072,
+      "visibility": "visible"
+    },
+    {
+      "command_id": "build",
+      "executable": "C:\\router-tools\\node.exe",
+      "argv": ["C:\\router-tools\\typescript\\tsc.js", "-p", "tsconfig.json"],
+      "cwd_mode": "worktree",
+      "timeout_ms": 180000,
+      "max_output_bytes": 65536,
+      "visibility": "visible"
+    },
+    {
+      "command_id": "project_acceptance",
+      "executable": "C:\\router-hidden\\acceptance.exe",
+      "argv": ["--protocol", "counts-v1"],
+      "cwd_mode": "worktree",
+      "timeout_ms": 120000,
+      "max_output_bytes": 4096,
+      "visibility": "hidden"
+    }
+  ],
+  "catalog_hash": "1c42fe6aa151fa1d0712cd8592a5594abdf3de6171193a02e00dcce058f9647b"
+}

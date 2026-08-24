@@ -77,6 +77,7 @@ export class RouterMcpServer {
       const args = objectArgs(value, ["task_id", "evidence_bundle_hash"]);
       return this.core.apply(textArg(args.task_id, "task_id"), textArg(args.evidence_bundle_hash, "evidence_bundle_hash"));
     }
+    if (name === "router.pilot_report") { const args = objectArgs(value, ["task_id"]); return this.core.pilotReport(textArg(args.task_id, "task_id")); }
     throw new Error("Unknown Router tool");
   }
 }
@@ -136,6 +137,7 @@ const TOOLS = [
   tool("router.finalize", "Record foreground GPT PASS, REPAIR_REQUIRED, or BLOCKED review bound to one EvidenceBundle. PASS only enters APPLY_PENDING.", { task_id: idSchema, evidence_bundle_hash: hashSchema, decision: { enum: ["PASS", "REPAIR_REQUIRED", "BLOCKED"] }, summary: { type: "string", minLength: 1, maxLength: 2000 } }, ["task_id", "evidence_bundle_hash", "decision", "summary"], false, true),
   tool("router.repair", "Run at most one provider repair attempt under the exact unchanged TaskPackage, RouteBinding, approval, scope, budget, and egress authorization.", { task_id: idSchema, evidence_bundle_hash: hashSchema, approval_summary_hash: hashSchema }, ["task_id", "evidence_bundle_hash", "approval_summary_hash"], false, false, true),
   tool("router.apply", "Explicitly apply PASS-reviewed bytes after main snapshot and target-preimage checks. Never commit, merge, or push.", { task_id: idSchema, evidence_bundle_hash: hashSchema }, ["task_id", "evidence_bundle_hash"], false, true),
+  tool("router.pilot_report", "Read the immutable self-hashed PilotRunRecord derived only from persisted state, attempts, EvidenceBundle, quality acceptance, and Final Review.", { task_id: idSchema }, ["task_id"], true, true),
 ];
 
 function tool(name: string, description: string, properties: Record<string, unknown>, required: string[], readOnly: boolean, idempotent: boolean, openWorld = false) {
@@ -159,10 +161,13 @@ async function main(): Promise<void> {
   const program = new Command();
   program.name("router-mcp").description("Thin STDIO MCP transport over RouterCoreService")
     .requiredOption("--project <path>").requiredOption("--state-root <path>")
+    .option("--mode <mode>", "pilot or synthetic", "pilot").option("--evidence-root <path>").option("--worktree-root <path>").option("--fixture-root <path>").option("--hidden-root <path>")
+    .option("--quality-policy <path>").option("--quality-catalog <path>")
     .requiredOption("--user-policy <path>").requiredOption("--project-policy <path>").requiredOption("--route-profile <path>");
   program.parse();
   const options = program.opts<Record<string, string>>();
-  const core = await createRouterCoreFromFiles({ project: options.project, stateRoot: options.stateRoot, userPolicy: options.userPolicy, projectPolicy: options.projectPolicy, routeProfile: options.routeProfile } satisfies RouterRuntimeFileOptions);
+  if (options.mode !== "pilot" && options.mode !== "synthetic") throw new Error("mode must be pilot or synthetic");
+  const core = await createRouterCoreFromFiles({ project: options.project, stateRoot: options.stateRoot, evidenceRoot: options.evidenceRoot, worktreeRoot: options.worktreeRoot, fixtureRoot: options.fixtureRoot, hiddenRoot: options.hiddenRoot, qualityPolicy: options.qualityPolicy, qualityCatalog: options.qualityCatalog, mode: options.mode, userPolicy: options.userPolicy, projectPolicy: options.projectPolicy, routeProfile: options.routeProfile } satisfies RouterRuntimeFileOptions);
   await runStdioMcpServer(core);
 }
 

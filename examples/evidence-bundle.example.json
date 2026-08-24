@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "bundle_id": "DEMO-BUNDLE-S1-001",
   "run_id": "DEMO-RUN-S1-001",
   "task_id": "DEMO-S1-001",
@@ -8,6 +8,12 @@
   "route_binding_hash": "d5d6627e1c0fcb2cf062a465d325f7569c0f3983a171b9831fd26e3116c30783",
   "policy_hash": "98873f2a99e75074c7149f95bf66a2f1e07217a6455ed90b0205d7ab22d31784",
   "quality_policy_hash": "397c45733f4059c926d22aa72dcc0ff07872a5d918e775afb998f58abc4bf83c",
+  "quality_approval_boundary_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "quality_catalog_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "fixture_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "hidden_root_hash": null,
+  "acceptance_results": { "version": 1, "approval_boundary_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "quality_report_hash": "640777340eecefe04c2d37d5a39927f842318adf7f1227cd63047f3c1eced339", "fixture_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "base_commit": "1111111111111111111111111111111111111111", "visible_tests": { "passed": 0, "failed": 0, "not_run": 0 }, "hidden_tests": { "passed": 0, "failed": 0, "not_run": 1 }, "regression": true, "scope_passed": true, "secret_passed": true, "diff_passed": true, "freeze_passed": true, "result_hash": "c0dcaa1bd0ed430fd8c13fd392635d2b9b1885e0e41815388165d3c0b8b04cbc" },
+  "hidden_acceptance_result": null,
   "quality_policy": { "version": 1, "policy_id": "synthetic-example", "command_ids": [], "command_registry_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945", "max_diff_bytes": 1048576, "max_file_bytes": 65536, "max_output_bytes": 4096, "max_wall_time_ms": 300000, "policy_hash": "397c45733f4059c926d22aa72dcc0ff07872a5d918e775afb998f58abc4bf83c" },
   "approval_hash": "4444444444444444444444444444444444444444444444444444444444444444",
   "execution_context_hash": "5555555555555555555555555555555555555555555555555555555555555555",
@@ -15,8 +21,8 @@
   "worktree_id": "DEMO-WORKTREE-S1-001",
   "base_commit": "1111111111111111111111111111111111111111",
   "worktree_head": "1111111111111111111111111111111111111111",
-  "quality_request_hash": "1abe16b7e3119d81828f3215d2cb1024c123a022b5d562bb9222fdd4f5ba6290",
-  "quality_report_hash": "7b83de0cd0fd86c55962b34a5516e71ddd59b60f33999ce71cad6e72411f8269",
+  "quality_request_hash": "0d2398f823c7789a25f9a5784e0242a313e8e5c380215dc9838fc791a068eeea",
+  "quality_report_hash": "640777340eecefe04c2d37d5a39927f842318adf7f1227cd63047f3c1eced339",
   "quality_passed": true,
   "quality_write_scope": ["src/example.ts"],
   "quality_command_ids": [],
@@ -38,5 +44,5 @@
   "pricing_catalog": null,
   "wall_clock_time_ms": 0, "stage_wall_clock_ms": { "plan": null, "execute": 0, "gate": 0, "review": null, "repair": 0, "total": 0 }, "repair_count": 0,
   "remaining_risks": ["S1 schema example only"], "redaction_notes": ["Synthetic data only"],
-  "bundle_hash": "71c34f65ee2e3d399a4051caf8a2c8327f08cf174dea81719f3e118249867ad2"
+  "bundle_hash": "49979dfb470cfb2d958791c8b9504b6a761a58125654f7ea82dd11a0a460a576"
 }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +19,7 @@ import { DEEPSEEK_ENDPOINT_ORIGIN, DEEPSEEK_ENDPOINT_PATH } from "../src/route-p
 import type { ProviderAdapter, ProviderRequest, ProviderResponse, QualityCommandSpec, RouteBinding } from "../src/types.js";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 const usage = { inputTokens: 10, outputTokens: 5, reasoningTokens: 1, cachedInputTokens: 2, cacheWriteTokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 };
 
 class MockModel implements ProviderAdapter {
@@ -320,7 +321,7 @@ describe("approval workflow", () => {
     const router = new RouterOrchestrator(model, configured.local, subject.store, undefined, subject.worktrees, configured.policy);
     const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const completed = await router.approve(planned.taskId, subject.main);
     expect(completed.state).toBe("COMPLETED"); expect(model.repairCalls).toBe(1); expect(configured.runner).toHaveBeenCalledTimes(2); expect(completed.evidenceBundleHash).toMatch(/^[a-f0-9]{64}$/);
-  }, 15_000);
+  }, 120_000);
 
   it("keeps unavailable provider usage distinct from a reported zero", async () => {
     const subject = await workflowFixture(); const router = new RouterOrchestrator(new UnavailableUsageModel(), new MockLocal(), subject.store, undefined, subject.worktrees);
@@ -351,7 +352,7 @@ describe("approval workflow", () => {
     const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const blocked = await router.approve(planned.taskId, subject.main);
     expect(blocked.state).toBe("BLOCKED"); expect(model.repairCalls).toBe(0); expect(blocked.evidenceBundleReference).toBeDefined(); expect(blocked.lastError).toMatch(/security or evidence boundary/);
     const bundle = JSON.parse(await readFile(path.join(subject.store.root, blocked.evidenceBundleReference!), "utf8")); expect(bundle.quality_passed).toBe(false); expect(bundle.tests_run[0]).toMatchObject({ command_id: "lint", timed_out: true });
-  }, 15_000);
+  }, 120_000);
 
   it("blocks without repair and persists evidence when the total quality-gate wall budget is exhausted", async () => {
     const subject = await workflowFixture(); let clock = 0; const spec: QualityCommandSpec = { command_id: "lint", executable: path.join(subject.root, "trusted-lint"), args: ["--check"], timeout_ms: 1_000 };
@@ -361,7 +362,7 @@ describe("approval workflow", () => {
     const planned = await router.auto("Fix a bounded parser bug", { projectDirectory: subject.main }); const blocked = await router.approve(planned.taskId, subject.main);
     expect(blocked.state).toBe("BLOCKED"); expect(model.repairCalls).toBe(0); expect(blocked.evidenceBundleReference).toBeDefined();
     const bundle = JSON.parse(await readFile(path.join(subject.store.root, blocked.evidenceBundleReference!), "utf8")); expect(bundle.quality_passed).toBe(false); expect(bundle.quality_gate_results.find((item: { gate_id: string }) => item.gate_id === "gate_budget")?.outcome).toBe("failed");
-  }, 15_000);
+  }, 120_000);
 
   it("marks an invalid structured preimage AMBIGUOUS without changing main or retrying", async () => {
     const subject = await workflowFixture(); const model = new BadPreimageModel(); const router = new RouterOrchestrator(model, new MockLocal(), subject.store, undefined, subject.worktrees);

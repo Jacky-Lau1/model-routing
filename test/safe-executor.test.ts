@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,7 +16,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) {
     const resolved = caseFold(path.resolve(root));
     if (!resolved.startsWith(`${temporary}${path.sep}`) || !path.basename(root).startsWith("router-s4-")) throw new Error("Refusing to remove a non-S4 fixture");
-    await rm(root, { recursive: true, force: true });
+    await rmrf(root);
   }
 });
 

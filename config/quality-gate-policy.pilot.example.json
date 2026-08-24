@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "policy_id": "synthetic-part1-pilot",
+  "command_ids": ["typecheck", "unit_tests", "build", "project_acceptance"],
+  "command_registry_hash": "1c42fe6aa151fa1d0712cd8592a5594abdf3de6171193a02e00dcce058f9647b",
+  "max_diff_bytes": 2097152,
+  "max_file_bytes": 524288,
+  "max_output_bytes": 131072,
+  "max_wall_time_ms": 900000,
+  "policy_hash": "9330e249d84a895ca3ede5f6d5ce03ae96c62145471fcc1d4823acc21c9bcc98"
+}

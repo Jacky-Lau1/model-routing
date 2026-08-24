@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { access, mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -276,4 +277,4 @@ async function gitResult(directory: string, args: readonly string[]): Promise<Gi
   child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8"); child.stdout.on("data", chunk => { stdout += chunk; }); child.stderr.on("data", chunk => { stderr += chunk; });
   const [code] = await once(child, "close") as [number | null]; return { code: code ?? -1, stdout, stderr };
 }
-async function safeRemoveFixture(root: string): Promise<void> { const temp = await realpath(os.tmpdir()); const target = await realpath(root); if (path.dirname(target).toLowerCase() !== temp.toLowerCase() || !path.basename(target).startsWith("router-s3-")) throw new Error("Refusing to remove a non-fixture path"); await rm(target, { recursive: true, force: true }); }
+async function safeRemoveFixture(root: string): Promise<void> { const temp = await realpath(os.tmpdir()); const target = await realpath(root); if (path.dirname(target).toLowerCase() !== temp.toLowerCase() || !path.basename(target).startsWith("router-s3-")) throw new Error("Refusing to remove a non-fixture path"); await rmrf(target); }

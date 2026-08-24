@@ -35,6 +35,7 @@ describe("S0 default entrypoints", () => {
     try {
       const output = runPowerShell(installer, [
         "-RepositoryRoot", repositoryRoot,
+        "-NodeExecutable", process.execPath,
         "-ShortcutDirectories", shortcutRoot,
         "-ShortcutBackend", "Mock",
         "-IconPath", "powershell.exe"
@@ -54,6 +55,7 @@ describe("S0 default entrypoints", () => {
     try {
       const output = runPowerShell(installer, [
         "-RepositoryRoot", repositoryRoot,
+        "-NodeExecutable", process.execPath,
         "-ShortcutDirectories", shortcutRoot,
         "-ShortcutBackend", "Mock",
         "-IconPath", "powershell.exe",
@@ -67,9 +69,9 @@ describe("S0 default entrypoints", () => {
     }
   });
 
-  windowsIt("terminal help advertises only Orchestrator", () => {
+  windowsIt("terminal help advertises only the compiled canonical launcher", () => {
     const output = runPowerShell(terminal, ["-Help"]);
-    expect(output).toContain("Orchestrator");
+    expect(output).toContain("compiled launcher");
     expect(output).not.toMatch(/native|restore openai|deepseek (?:flash|pro)|openai codex/i);
   });
 });

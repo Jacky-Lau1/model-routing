@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { atomicRenameWithLocalRetry } from "./attempt-persistence.js";
-import { sanitizeForPersistence } from "./redaction.js";
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_RECORD_BYTES = 2 * 1024 * 1024;
@@ -20,7 +19,9 @@ export class RouterCoreStore {
     let renamed = false;
     try {
       await mkdir(directory, { recursive: true });
-      const data = `${JSON.stringify(sanitizeForPersistence(value), null, 2)}\n`;
+      // Core records are already strict, secret-free contracts. Their exact absolute roots and
+      // command boundaries must survive persistence unchanged or approval hashes become invalid.
+      const data = `${JSON.stringify(value, null, 2)}\n`;
       if (Buffer.byteLength(data, "utf8") > MAX_RECORD_BYTES) throw new Error("Router core record exceeds the persistence limit");
       const handle = await open(temporary, "wx");
       try { await handle.writeFile(data, "utf8"); await handle.sync(); } finally { await handle.close(); }

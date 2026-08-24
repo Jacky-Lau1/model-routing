@@ -17,6 +17,7 @@
 | 2026-08-24 | S7 canonical core、结构化 CLI、thin STDIO MCP/skill | Direct DeepSeek mock adapter；synthetic foreground client | `codex/s6-quality-evidence` working tree | canonical TaskPackage/policy/route/approval hash、mock response tuple 与 EvidenceBundle reference；未发 API，不构成真实 provider/peer 证据 | TypeScript `--noEmit` exit 0；S7/共享安全定向 7/7 files、113/113；全量 23/23 files、335/335 | 通过 | 单一 synthetic STDIO 会话完成 prepare→execute→review_evidence→finalize；mock send=1，重复 execute 不重发，main workspace 与 provider/config/auth sentinel hash 不变。未知 chat field、approval/bundle hash mismatch、private capability 均失败关闭。未注册真实 MCP、未写 `.codex/config.toml`、未读真实 config/auth/credential-bearing env、未联网/未运行 API/benchmark；详见 `docs/24`。 |
 | 2026-08-24 | S8 GPT 三态 review、单次 repair、controlled apply | Direct DeepSeek mock adapter；mock GPT reviewer；synthetic Git repo | `codex/s6-quality-evidence` working tree | 当前 bundle + frozen approval/route/policy/runtime binding、repair 新 attempt、apply snapshot/preimage/postimage；未发 API，不构成真实 provider/peer 证据 | TypeScript `--noEmit`、diff check；S8 6/6；拆分全量 24 files、342/342 | 通过 | review unavailable 保持 REVIEW_PENDING；repair success/failure、changed scope approval、main drift、initial dirty target、duplicate apply 通过。PASS 只到 APPLY_PENDING；apply 不 commit/merge/push。未注册真实 MCP、未读真实 config/auth/env、未联网/运行 API/benchmark；详见 `docs/25`。 |
 | 2026-08-24 | S9 Orchestrator-first 零费用端到端认证 | Direct DeepSeek injected mock fetch + mock auth；mock foreground review/local command；synthetic repo/MCP | `codex/s6-quality-evidence` working tree | canonical frozen contracts、mock Response.url/model/request ID、attempt checkpoints、EvidenceBundle、CLI/MCP shared state；不构成真实 provider peer 证据 | TypeScript、diff check；S8 6/6；S9 26/26；adapter 43/43；全量 25 files 368/368；外置 emit build | 通过 | privacy/egress、Flash/Pro/mismatch、success/failure/ambiguous/crash/duplicate、scope/usage/secret/quality、repair/apply、redaction/cleanup 全覆盖；修复首次 EXECUTE patch 前 usage budget 缺口。真实 API/credential/config/MCP/live benchmark 为零；仅 eligible for limited live Pilot，详见 `docs/26`。 |
+| 2026-08-24 | Part 1 离线工程闭环 | 全程离线；无 provider/API/credential/config/MCP 副作用 | `codex/router-three-part-closure` working tree | canonical quality gate + hidden acceptance、exact informed approval、PilotRunRecord 接入 Core/CLI/MCP、可安装离线候选与 doctor；不构成真实 provider/peer 证据 | TypeScript `--noEmit`；Part 1 定向 2 files 17/17；S8 7/7；S9 26/26；全量 29 files 414/414；schema/examples；diff check；外置 build；临时 install→discovery→doctor→rollback | 通过 | visible/hidden pass/fail、hidden 泄漏、policy/catalog/executable/argv/hash 篡改、timeout、overflow、进程树、gate 修改 worktree、fixture/base commit 变化、roots 重叠、config/state 损坏、main workspace 不变、临时 Codex home 安装/发现/回滚全覆盖。修复 5 处未验证回归（`fs.rm` 递归挂起→manual `rmrf`、MCP 工具断言缺 `router.pilot_report`、显式超时不足、无权限 symlink 环境、legacy orchestrator `visible_tests` 投影与校验器不一致）。真实 API/credential/config/MCP/live benchmark 为零；Part 1 通过不改变 S10 `BLOCKED`，详见本表后 command evidence。 |
 
 ### S6 command evidence（2026-08-23）
 
@@ -99,6 +100,39 @@ git diff --check
 & '<codex-bundled-node.exe>' 'node_modules\typescript\bin\tsc' -p tsconfig.json --outDir '<external-s9-temp-build>'
 # exit 0; 174 generated files; exact-path verified and removed
 ```
+
+### Part 1 command evidence（2026-08-24）
+
+以下命令只使用 bundled Node、仓库依赖和系统临时 synthetic 目录；没有真实 API、credential、Codex config/auth 或 MCP 注册。
+
+```powershell
+& '<codex-bundled-node.exe>' 'node_modules\typescript\bin\tsc' -p tsconfig.json --noEmit
+# exit 0
+
+& '<codex-bundled-node.exe>' 'node_modules\vitest\vitest.mjs' run --configLoader runner --no-cache test/part1-quality-gate.test.ts test/part1-installation.test.ts
+# exit 0; Test Files 2 passed (2); Tests 17 passed (17)
+
+& '<codex-bundled-node.exe>' 'node_modules\vitest\vitest.mjs' run --configLoader runner --no-cache test/s8-review-repair-apply.test.ts
+# exit 0; Test Files 1 passed (1); Tests 7 passed (7)
+
+& '<codex-bundled-node.exe>' 'node_modules\vitest\vitest.mjs' run --configLoader runner --no-cache test/s9-zero-cost-e2e.test.ts
+# exit 0; Test Files 1 passed (1); Tests 26 passed (26)
+
+& '<codex-bundled-node.exe>' 'node_modules\vitest\vitest.mjs' run --configLoader runner --no-cache
+# exit 0; Test Files 29 passed (29); Tests 414 passed (414)
+
+# schema/examples：config + examples 共 36 个 JSON 严格解析；quality-gate policy/catalog、pilot-run-record 与 schema 结构断言全部通过
+
+git diff --check
+# exit 0（仅既有 LF/CRLF 提示）
+
+& '<codex-bundled-node.exe>' 'node_modules\typescript\bin\tsc' -p tsconfig.build.json --outDir '<external-part1-temp-build>'
+# exit 0; 117 generated files; exact-path verified and removed
+```
+
+临时环境 install → discovery → doctor → rollback 由 `test/part1-installation.test.ts` 覆盖（7/7）：编译产物 MCP 入口预览、外部生产分发 `initialize` + `tools/list` 发现 9 工具、exact install/doctor/uninstall dry-run、漂移拒绝、auth/provider/model/profile/无关 MCP byte-for-byte 保留、roots 重叠/损坏 JSON/过期 pricing/build 篡改/snapshot mismatch 失败关闭。
+
+修复的 5 处未验证回归：Windows `fs.rm` 递归挂起改为 manual `rmrf`（新增 `test/fs-test-utils.ts`，17 个测试文件统一使用）；MCP `tools/list` 断言补齐 `router.pilot_report`；orchestrator 3 个 + quality-gate 2 个显式 15s/10s 超时统一提到 120s（覆盖慢速 git worktree）；scope-guard symlink 测试在无「创建符号链接」权限时静默产生空文件、增加真 symlink 校验后跳过；legacy orchestrator `visible_tests` 投影由 `tests_run` 改为按 `command_ids` gate outcome 计算，消除 wall-budget 耗尽时的 acceptance projection 矛盾。
 
 ## 记录规则
 

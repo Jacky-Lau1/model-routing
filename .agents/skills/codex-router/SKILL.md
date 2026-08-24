@@ -5,11 +5,13 @@ description: Use the repository's narrow Router tools when the user wants the cu
 
 # Codex Router
 
-Keep the current GPT session as supervisor. Use only `router.prepare`, `router.execute`, `router.status`, `router.abort`, `router.review_evidence`, `router.finalize`, `router.repair`, and `router.apply`; these tools call the shared Router core.
+Keep the current GPT session as supervisor. Use only `router.prepare`, `router.execute`, `router.status`, `router.abort`, `router.review_evidence`, `router.finalize`, `router.repair`, `router.apply`, and read-only `router.pilot_report`; these tools call the shared Router core.
 
 Prepare one minimal TaskPackage containing the goal, bounded scopes, acceptance criteria, stop conditions, privacy/egress fields, budget, and content-hash manifest. Never include full chat history, hidden reasoning, credentials, or unapproved file contents.
 
 Call `router.prepare`, show its compact approval summary to the user, and call `router.execute` only after the user approves that exact `approval_summary_hash`. Poll `router.status` without retrying execution. When evidence is ready, call `router.review_evidence`, review the referenced diff and evidence against the TaskPackage, then call `router.finalize` with exactly `PASS`, `REPAIR_REQUIRED`, or `BLOCKED` bound to the current EvidenceBundle hash.
+
+After a terminal Final Review, use `router.pilot_report` only to read the immutable self-hashed record derived by the core. Never supply or reinterpret success, hidden results, usage, costs, violations, hard-stop status, or recommendation.
 
 `PASS` only enters `APPLY_PENDING`; it never writes the main workspace. Use `REPAIR_REQUIRED` only for a concrete issue repairable under the unchanged TaskPackage, RouteBinding, provider/model, scope, budget, privacy/egress authorization, and approval. Call `router.repair` at most once with that same approval summary hash, then review the new attempt and EvidenceBundle. Call `router.apply` only as an explicit final action after PASS. Apply never commits, merges, pushes, or overwrites dirty targets.
 

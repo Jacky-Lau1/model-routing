@@ -187,3 +187,13 @@
 - 预算：每个 canonical EXECUTE/REPAIR response 都必须在任何 patch apply 前复核累计成功 model attempts 和 provider-reported input/output usage。超预算 response 已可能产生供应商副作用，因此归为 `response_invalid → AMBIGUOUS/BLOCKED`，不自动重发。
 - 结论：S0–S9 通过只允许标记 `eligible for limited live Pilot`。真实 API、credential、Codex MCP 注册、私有数据外发、预算和 Pilot 指标仍需 S10 当次明确授权；不得称为 production ready。
 - 边界：mock route evidence 不证明 DNS/socket peer、proxy/TLS 或供应商账单；worktree/capability 不是 OS sandbox；private Direct capability、多文件 apply 与 write/APPLIED crash recovery 未扩展。
+
+## ADR-022：Part 1 用离线可验证的 canonical 质量门与可分发候选闭合工程闭环
+
+- 日期：2026-08-24
+- 状态：接受
+- 决策：在进入任何真实 Pilot 之前，先用完全离线的 TypeScript/Vitest/schema/Git/build/临时环境证据闭合工程闭环。canonical quality gate 运行时加载严格 schema 校验、hash-bound policy 与 trusted command catalog，executable/argv/cwd/timeout/output/wall limits 和 catalog hash 全部进入 `QualityGateApprovalBoundary`；visible tests、本地 hidden acceptance、scope/secret/diff/freeze 结果并入 self-hashed `QualityAcceptanceProjection`，hidden tests/reference answer 只存模型不可读、不可外发的本地 root，仅返回 bounded/redacted 结果。
+- exact informed approval：prepare 摘要显式绑定 task/goal/TaskPackage hash、provider/adapter/model/endpoint/protocol/auth alias/reasoning、pricing version/hash/validity、classification/read-write scope、egress paths/content hashes/authorization/expiry、attempt/request/token/tool/wall/cost ceilings、roots、base commit/snapshot/isolation、hidden-data exclusion、redirect/escalation/retry/apply/commit/push 限制、stop conditions 与 approval expiry；任何字段变化生成新 hash 并在 provider side effect 前要求重新批准。
+- PilotRunRecord：从 persisted state、AttemptRecord、EvidenceBundle、quality acceptance 与 Final Review 自动派生，调用者不得自由声明 success/usage/cost/violation/recommendation；原子持久化、self-hashed、绑定当前 EvidenceBundle，拒绝 tamper/replay；GPT telemetry 不可得时保留 null 与 `core_metrics_unavailable`，不写零或猜测。CLI/MCP 只提供只读获取。
+- 可安装离线候选：MCP 从编译产物启动，不依赖仓库 cwd 下的 tsx/devDependencies；消除用户名/OneDrive/AppData/bundled runtime 硬编码；提供 install/uninstall `--dry-run`、`config-preview`、`doctor`、`pricing-verify`、`credential-status`；uninstall 只删除 exact hash-matched block，配置漂移拒绝覆盖，不改 auth/provider/model/profile/其他 MCP。
+- 后果：Part 1 阶段门全部离线通过（tsc、Part 1 定向 17/17、S8 7/7、S9 26/26、全量 29 files 414/414、schema/examples、git diff --check、外置 build、临时安装/发现/回滚），但真实 MCP 注册、credential、provider 与公平 GPT-only telemetry 仍未授权，状态保持 BLOCKED；不得把离线证据描述为真实 Pilot，也不得在阶段门不完整时开始真实 Pilot。

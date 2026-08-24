@@ -1,6 +1,8 @@
 import { access, readFile, rm } from "node:fs/promises";
+import { rmrf } from "./fs-test-utils.js";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { stableHash } from "../src/canonical.js";
 import { assertEvidenceBundle } from "../src/contracts.js";
 import { readEvidenceArtifact } from "../src/quality-gate.js";
 import { DEFAULT_QUALITY_GATE_POLICY } from "../src/quality-gate.js";
@@ -10,7 +12,7 @@ import { GitWorktreeManager } from "../src/worktree.js";
 import { canonicalFixture, directoryHash } from "./router-fixture.js";
 
 const roots: string[] = [];
-afterEach(async () => Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))));
+afterEach(async () => Promise.all(roots.splice(0).map(root => rmrf(root))));
 
 describe("S7 canonical Router core", () => {
   it("completes prepare, one approved execute, evidence review, and foreground finalize without touching main or Codex sentinels", async () => {
@@ -44,6 +46,35 @@ describe("S7 canonical Router core", () => {
     await expect(fixture.core.execute(prepared.task_id, "0".repeat(64))).rejects.toThrow(/summary changed/);
     expect(fixture.model.sends).toBe(0);
     expect((await fixture.core.status(prepared.task_id)).state).toBe("AWAITING_APPROVAL");
+  });
+
+  it("hash-binds every informed-approval section so any leaf change requires a new approval", async () => {
+    const fixture = await canonicalFixture(); roots.push(fixture.root);
+    const summary = (await fixture.core.prepare(fixture.task)).approval_summary;
+    const body = structuredClone(summary) as unknown as Record<string, unknown>;
+    delete body.approval_summary_hash;
+    expect(summary.approval_summary_hash).toBe(stableHash(body));
+    const mutations: Array<[string, (value: any) => void]> = [
+      ["task", value => { value.goal += " changed"; }], ["TaskPackage", value => { value.task_package_hash = "0".repeat(64); }],
+      ["provider", value => { value.provider += "-changed"; }], ["adapter", value => { value.adapter_id += "-changed"; }],
+      ["model", value => { value.model += "-changed"; }], ["endpoint", value => { value.endpoint_path += "/changed"; }],
+      ["protocol", value => { value.wire_protocol = "changed"; }], ["auth alias", value => { value.auth_alias = "changed"; }],
+      ["reasoning", value => { value.reasoning_effort = "changed"; }], ["pricing", value => { value.pricing.hash = "0".repeat(64); }],
+      ["classification", value => { value.data_classification = "private"; }], ["read scope", value => { value.read_scope.push("src/extra.ts"); }],
+      ["write scope", value => { value.write_scope.push("src/extra.ts"); }], ["egress", value => { value.egress_policy.paths.push("src/extra.ts"); }],
+      ["attempt ceiling", value => { value.budget.max_attempts += 1; }], ["request ceiling", value => { value.budget.max_provider_requests += 1; }],
+      ["token ceilings", value => { value.budget.max_output_tokens += 1; }], ["tool ceiling", value => { value.budget.max_tool_calls += 1; }],
+      ["request wall ceiling", value => { value.budget.max_request_wall_time_ms += 1; }], ["total wall ceiling", value => { value.budget.max_wall_time_ms += 1; }],
+      ["cost ceiling", value => { value.budget.max_estimated_cost_usd = (value.budget.max_estimated_cost_usd ?? 0) + 1; }], ["roots", value => { value.roots.evidence += "-changed"; }],
+      ["base commit", value => { value.isolation.base_commit = "0".repeat(40); }], ["main snapshot", value => { value.isolation.main_workspace_snapshot = "0".repeat(64); }],
+      ["isolation", value => { value.isolation.isolation_hash = "0".repeat(64); }], ["hidden exclusion", value => { value.hidden_data.model_context_excluded = false; }],
+      ["quality policy", value => { value.quality.policy_hash = "0".repeat(64); }], ["catalog", value => { value.quality.command_catalog_hash = "0".repeat(64); }],
+      ["redirect", value => { value.restrictions.redirect = "allowed"; }], ["retry", value => { value.restrictions.automatic_retry = "allowed"; }],
+      ["apply", value => { value.restrictions.apply = "allowed"; }], ["commit", value => { value.restrictions.commit = "allowed"; }],
+      ["push", value => { value.restrictions.push = "allowed"; }], ["stop conditions", value => { value.stop_conditions.push("changed"); }],
+      ["approval expiry", value => { value.approval_expires_at = "2099-01-01T00:00:00.000Z"; }],
+    ];
+    for (const [label, mutate] of mutations) { const changed = structuredClone(body); mutate(changed); expect(stableHash(changed), label).not.toBe(summary.approval_summary_hash); }
   });
 
   it("aborts a prepared task without executing", async () => {

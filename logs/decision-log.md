@@ -153,3 +153,13 @@
 - 成本门：Part 2 必须证明 hybrid 同质量下的总可审计成本相对 GPT-only 至少下降 30%，且 scope/privacy/routing/secret/main pollution、ambiguity 与 unexplained duplicate 为零；缺少可靠 GPT telemetry 时保持 BLOCKED。
 - 文档：`docs/17` 成为唯一当前交接，三个 Prompt 分别存于 `prompts/part-*.md`；旧逐阶段 Prompt 只由 Git 历史保存。S1–S9 文档仍是技术规格与离线证据，不当作当前执行入口。
 - 配置：删除重复 YAML policy mirror，runtime 示例统一为严格 JSON；MCP 示例中的用户绝对路径改为 generic sanitized preview，真实安装必须重新生成并批准 exact local block。
+
+## 2026-08-24｜Part 1 离线工程闭环完成
+
+- 决策：在开始真实 Pilot 前，先闭合离线工程闭环。canonical quality gate 运行时加载严格 schema 校验、hash-bound policy 与 trusted command catalog，executable/argv/cwd/timeout/output/wall limits 与 catalog hash 进入 `QualityGateApprovalBoundary`；visible tests、本地 hidden acceptance、scope/secret/diff/freeze 结果并入 self-hashed `QualityAcceptanceProjection`；hidden tests/reference answer 只存模型不可读、不可外发的本地 root，仅返回 bounded/redacted 结果。
+- exact informed approval：`RouterApprovalSummary` 显式绑定 task/goal/TaskPackage hash、provider/adapter/model/endpoint/protocol/auth alias/reasoning、pricing、classification/read-write scope、egress、budget ceilings、roots、base/snapshot/isolation、hidden-data exclusion、redirect/escalation/retry/apply/commit/push 限制、stop conditions 与 expiry；任何字段变化生成新 hash 并在 provider side effect 前要求重新批准。
+- PilotRunRecord：从 persisted state、attempts、EvidenceBundle、quality acceptance 与 Final Review 自动派生，调用者不得自由声明结果；原子持久化、self-hashed、绑定当前 EvidenceBundle，拒绝 tamper/replay；GPT telemetry 不可得保留 null 与 `core_metrics_unavailable`。
+- 可安装离线候选：MCP 从编译产物启动、不依赖仓库 cwd 的 tsx/devDependencies；消除用户名/OneDrive/AppData/bundled runtime 硬编码；提供 install/uninstall `--dry-run`、`config-preview`、`doctor`、`pricing-verify`、`credential-status`；uninstall 只删除 exact hash-matched block，配置漂移拒绝覆盖，不改 auth/provider/model/profile/其他 MCP。
+- 修复：Part 1 代码原处于未验证中间态，验证中发现并修复 5 处回归——(1) 测试 harness 的 Windows `fs.rm` 递归挂起（新增 `test/fs-test-utils.ts` 的 manual `rmrf`，全量 17 个测试文件统一使用）；(2) MCP 工具断言未含新增 `router.pilot_report`；(3) 3 个 orchestrator 与 2 个 quality-gate 测试的显式 15s/10s 超时不足以覆盖慢速 git worktree（统一提到 120s）；(4) scope-guard symlink 测试在无「创建符号链接」权限的 Windows 上会静默产生空文件（增加真 symlink 校验后跳过）；(5) legacy orchestrator 的 `visible_tests` 投影按 `tests_run` 计算、与 EvidenceBundle 校验器按 `command_ids` gate outcome 计算不一致，导致 wall-budget 耗尽时 acceptance projection 矛盾（改为按 gate outcome 计算）。
+- 证据：TypeScript `--noEmit` exit 0；Part 1 定向 2 files 17/17；S8 7/7；S9 26/26；全量 29 files 414/414 exit 0；36 个 JSON 严格解析 + schema/example 断言全过；`git diff --check` exit 0；外置目录 production build exit 0（117 files 后清理）；临时 Codex home 的 install → discovery → doctor → rollback 由 `part1-installation` 覆盖。
+- 边界：真实 provider/API、credential 读写、Codex config/auth/provider/model 修改、真实 MCP 注册、legacy live-benchmark、apply 到真实项目、commit/push/tag/PR/merge 均为零。Part 1 阶段门通过不改变 S10 `BLOCKED`，不得把离线证据描述为真实 Pilot。

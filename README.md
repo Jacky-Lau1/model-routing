@@ -2,7 +2,7 @@
 
 > 面向 Codex Desktop 的“强模型规划与验收 + 低成本模型受控执行”方案档案库。
 
-**状态：Orchestrator-first S0–S9 已完成 mock/synthetic 零费用阶段门；eligible for limited live Pilot。** S9 以临时 synthetic repo/state/worktree/MCP、mock auth/fetch/provider/reviewer/local gate 认证完整 canonical 控制链，覆盖 privacy、route mismatch、crash、ambiguous、duplicate、scope、secret、quality、repair、apply conflict、redaction 和 cleanup；S9 定向 26/26、全量 25 files 368/368 通过。真实 API 请求与费用为零，未注册真实 MCP、未读取真实配置/认证/密钥，不代表 S10 已获授权或 production ready。
+**状态：Orchestrator-first S0–S9 已完成 mock/synthetic 零费用阶段门；Part 1 离线工程闭环已通过；eligible for limited live Pilot。** S9 以临时 synthetic repo/state/worktree/MCP、mock auth/fetch/provider/reviewer/local gate 认证完整 canonical 控制链；Part 1 接通 canonical quality gate + 本地 hidden acceptance、exact informed approval、PilotRunRecord 接入 Core/CLI/MCP、可安装离线候选与 doctor、临时安装/发现/回滚。Part 1 定向 17/17、S8 7/7、S9 26/26、全量 29 files 414/414 通过。真实 API 请求与费用为零，未注册真实 MCP、未读取真实配置/认证/密钥，不代表 S10 已获授权或 production ready。
 
 ## 目标
 
@@ -49,7 +49,7 @@
 
 后续已收敛为三个 Agent Team 部分：Part 1 离线工程闭环，Part 2 真实链路与至少 30% 的可审计降费证明，Part 3 日常能力硬化与发布闭环。当前应从 [Part 1 Prompt](prompts/part-1-offline-engineering-closure.md) 开始。
 
-S10 前置整改已加入 EvidenceBundle v3、逐 HTTP round 成本/预算、Pilot 报告门和只预览的 MCP 注册模板，但状态仍为 **BLOCKED**：真实 runtime 质量命令、Pilot report 接线、可分发安装、真实 MCP/credential/provider 与公平 GPT-only telemetry 尚未闭环。不得把前置整改、单臂 smoke 或 DeepSeek 单价低当成整个方案已经降费。
+S10 前置整改已加入 EvidenceBundle v3、逐 HTTP round 成本/预算、Pilot 报告门和只预览的 MCP 注册模板；Part 1 已把 canonical quality gate、本地 hidden acceptance、exact informed approval、PilotRunRecord、可分发安装、doctor 与临时安装/发现/回滚全部接通并离线验证，但状态仍为 **BLOCKED**：真实 MCP 注册、credential、provider 与公平 GPT-only telemetry 尚未闭环。不得把离线工程闭环、单臂 smoke 或 DeepSeek 单价低当成整个方案已经降费。
 
 在 GitHub 网页链接可用后，也可以直接提供仓库 URL。任何实施前都应重新核验上游 Codex 文档、模型价格、提供商 API 兼容性与当前版本限制。
 
