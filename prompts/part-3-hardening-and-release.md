@@ -7,6 +7,16 @@ G:\OneDrive\个人文档\个人AI\模型路由开发
 
 执行“三部分 Agent Team 闭环计划”的 Part 3：稳定化、能力扩展和最终发布验收。
 
+【当前进度交接（2026-08-25，主 agent 已核对，直接采信勿重做）】
+- Part 1 已全部 PASS 并提交（远程 `origin/codex/router-three-part-closure` = `b16ea05`）。Part 2 尚未执行；本 prompt 供 Part 2 给出 `recommendation=expand` 且 30% 降费达标后使用。
+- 本机环境坑（跨会话持续，详见 `~/.workbuddy/MEMORY.md`，勿重复诊断）：
+  1. Windows 非管理员 + 开发者模式未开启 → file/dir symlink 不可用，测 reparse 越界用 **junction**（免权限）。
+  2. OneDrive 会实时回退 `.git` refs → 提交用 `git commit-tree` + `git push <commit>:refs/heads/<branch>` 直接推远程，不依赖本地分支指针。
+  3. push credential 多值链（`helper-selector` → GCM 弹窗挂起）→ askpass 脚本输出 `gh auth token` + `GIT_CONFIG_NOSYSTEM=1` + `HOME=<空目录>` + `GIT_ASKPASS` + URL 带 username。
+  4. 测试慢（git worktree 15–45s/用例），vitest 120s，bash 长跑 300s+ 或后台。
+  5. http.proxy = `127.0.0.1:7890`。
+- 真实副作用（写真实 config、credential、真实 provider 请求、apply、commit/push）仍需当次、逐项、带 exact hash 授权。
+
 仅当 Part 2 recommendation=expand，且可审计数据显示 Hybrid 总成本相对 GPT-only 下降至少 30% 时开始；否则立即报告 BLOCKED。
 
 先读取 Part 1/2 交接、paired Pilot reports、EvidenceBundle/成本证据、当前支持范围、SECURITY、安装/恢复/卸载文档和 Git status/diff。

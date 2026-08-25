@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("thin repository Router skill", () => {
   it("is discoverable, instruction-only, and delegates every operation to the shared core tools", async () => {
     const root = path.resolve(".agents/skills/codex-router");
-    const text = await readFile(path.join(root, "SKILL.md"), "utf8");
+    const text = (await readFile(path.join(root, "SKILL.md"), "utf8")).replace(/\r\n/g, "\n");
     expect(text).toMatch(/^---\nname: codex-router\ndescription: [^\n]+\n---\n/);
     for (const name of ["router.prepare", "router.execute", "router.status", "router.abort", "router.review_evidence", "router.finalize", "router.repair", "router.apply"]) expect(text).toContain(`\`${name}\``);
     expect(text).toMatch(/Never include full chat history, hidden reasoning/i);

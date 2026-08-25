@@ -107,7 +107,7 @@ export class AttemptPersistence {
     return async () => {
       if (released) return;
       released = true;
-      try { await rmdir(directory); } catch { throw new PersistenceError("execution lock release"); }
+      try { await rmdirWithRetry(directory); } catch { throw new PersistenceError("execution lock release"); }
     };
   }
 
@@ -279,6 +279,21 @@ function assertTimestamp(value: unknown, name: string): asserts value is string 
 function isMissing(error: unknown): boolean { return (error as NodeJS.ErrnoException)?.code === "ENOENT"; }
 function isAlreadyExists(error: unknown): boolean { return (error as NodeJS.ErrnoException)?.code === "EEXIST"; }
 function isTransientRenameConflict(error: unknown): boolean { return ["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException)?.code ?? ""); }
+function isTransientRemoveConflict(error: unknown): boolean { return ["EACCES", "EPERM", "EBUSY"].includes((error as NodeJS.ErrnoException)?.code ?? ""); }
+
+// Windows Defender/antivirus can transiently hold a handle on a just-created lock
+// directory, making rmdir fail with EACCES/EPERM/EBUSY even though the directory
+// is empty. Retry briefly instead of failing the already-succeeded attempt.
+async function rmdirWithRetry(directory: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try { await rmdir(directory); return; }
+    catch (error) {
+      if (isMissing(error)) return; // already gone
+      if (isTransientRemoveConflict(error) && attempt < 40) { await delay(5); continue; }
+      throw error;
+    }
+  }
+}
 
 export async function atomicRenameWithLocalRetry(source: string, target: string): Promise<void> {
   for (let attempt = 0; ; attempt++) {

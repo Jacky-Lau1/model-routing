@@ -12,6 +12,9 @@ export const OPENAI_ENDPOINT_PATH = "/v1/responses";
 export const DEEPSEEK_ENV_AUTH_ALIAS = "deepseek-env";
 export const DEEPSEEK_DPAPI_AUTH_ALIAS = "deepseek-dpapi";
 export const CODEX_AUTH_ALIAS = "codex-cli-managed";
+export const OPENAI_RESPONSES_ADAPTER_ID = "openai-responses-direct";
+export const OPENAI_ENV_AUTH_ALIAS = "openai-env";
+export const OPENAI_DPAPI_AUTH_ALIAS = "openai-dpapi";
 
 export interface RoutePreflightResult { binding: RouteBinding; targetUrl: string }
 

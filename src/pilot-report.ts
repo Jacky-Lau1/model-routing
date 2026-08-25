@@ -213,7 +213,7 @@ function deriveUsage(bundle: EvidenceBundle, binding: RouteBinding): PilotRunRec
 }
 
 function deriveProviderRequestCount(attempts: AttemptRecord[], bundle: EvidenceBundle, arm: PilotArm): number | null {
-  const sent = attempts.filter(item => item.send_started_at !== null || ["SENDING", "SUCCEEDED", "AMBIGUOUS"].includes(item.status));
+  const sent = attempts.filter(item => item.stage !== "VALIDATE" && (item.send_started_at !== null || ["SENDING", "SUCCEEDED", "AMBIGUOUS"].includes(item.status)));
   if (arm === "gpt_only" && bundle.transport_rounds.length === 0) return null;
   if (sent.some(item => item.transport_rounds.length === 0)) return null;
   return bundle.transport_rounds.length;
@@ -226,7 +226,7 @@ function unexplainedDuplicateRequests(attempts: AttemptRecord[]): number {
 }
 
 function deriveRoutingViolations(bundle: EvidenceBundle, binding: RouteBinding): number {
-  let violations = bundle.route_evidence_summaries.filter(item => item.verification_status === "incomplete" || !item.request_id_present || item.provider !== binding.provider_id || item.model !== binding.model_id).length;
+  let violations = bundle.route_evidence_summaries.filter(item => item.verification_status !== "local" && (item.verification_status === "incomplete" || !item.request_id_present || item.provider !== binding.provider_id || item.model !== binding.model_id)).length;
   violations += bundle.transport_rounds.filter(round => round.response_model !== null && round.response_model !== binding.model_id || round.response_origin !== null && round.response_origin !== binding.endpoint_origin || round.response_path !== null && round.response_path !== binding.endpoint_path).length;
   return violations;
 }

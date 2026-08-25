@@ -18,7 +18,7 @@ import { applyStructuredPatches, buildExecutorCapabilityGrant } from "./safe-exe
 import { assertLegacyTransition, canLegacyTransition } from "./state-machine.js";
 import { assertAllowedChanges, hashScopeSnapshot, snapshotWorkingTree } from "./scope-guard.js";
 import { GitWorktreeManager, type WorktreeLease } from "./worktree.js";
-import type { DataClassification, EvidenceBundle, LegacyWorkflowState, PlanPacket, ProviderAdapter, ProviderRequest, ProviderResponse, QualityGatePolicy, QualityGateReport, RouteDecision, RunState, TaskProfile, UsageAvailability, UsageMetrics, WorkflowState } from "./types.js";
+import type { DataClassification, EvidenceBundle, LegacyWorkflowState, PlanPacket, ProviderAdapter, ProviderRequest, ProviderResponse, QualityGatePolicy, QualityGateReport, RouteDecision, RunState, Stage, TaskProfile, UsageAvailability, UsageMetrics, WorkflowState } from "./types.js";
 
 export interface AutoOptions {
   projectDirectory?: string;
@@ -251,7 +251,11 @@ export class RouterOrchestrator {
     const taskProjectionHash = stableHash(state.plan);
     const executionContextHash = stableHash({ provenance: "legacy_bridge", run_id: lease.binding.run_id, task_id: state.taskId, base_commit: lease.binding.base_commit, worktree_id: lease.binding.worktree_id, isolation_hash: lease.binding.isolation_hash, approval_hash: approvalHash });
     const transportRounds = attempts.flatMap(item => item.transport_rounds);
-    const modelAttempts = attempts.filter(item => item.stage === "EXECUTE" || item.stage === "REPAIR");
+    // Aggregate cost across every billable model stage (GPT planning, DeepSeek
+    // execution/repair, GPT review and second-failure diagnosis), not just
+    // EXECUTE/REPAIR. VALIDATE runs the deterministic local gate and carries no
+    // provider cost, so it is intentionally excluded.
+    const modelAttempts = attempts.filter(item => BILLABLE_MODEL_STAGES.has(item.stage));
     const modelRounds = modelAttempts.flatMap(item => item.transport_rounds);
     const roundEstimated = modelRounds.length && modelRounds.every(item => item.estimated_list_cost_usd !== null) ? sumLegacyCosts(modelRounds.map(item => item.estimated_list_cost_usd!)) : null;
     const estimated = roundEstimated ?? (modelRounds.length === 0 ? state.normalizedEquivalentUsd ?? null : null);
@@ -409,7 +413,9 @@ function parseJson<T>(text: string): T { const fenced = text.match(/```(?:json)?
 function requiredArray(value: string[] | undefined, name: string): string[] { if (!Array.isArray(value) || value.length === 0) throw new Error(`Plan field ${name} must be a non-empty array`); return value; }
 function evidence(route: RouteDecision, response: ProviderResponse) {
   const availability = response.usageAvailability ?? { inputTokens: true, outputTokens: true, reasoningTokens: true, cacheHitTokens: true, cacheMissTokens: true };
-  const cost = availability.inputTokens && availability.outputTokens ? estimateEquivalentUsd(route.model, response.usage) : undefined;
+  // Fail closed when the cache breakdown is unavailable: list-price estimation
+  // must never silently treat unknown cache as an all-miss (over)estimate.
+  const cost = availability.inputTokens && availability.outputTokens && availability.cacheHitTokens && availability.cacheMissTokens ? estimateEquivalentUsd(route.model, response.usage) : undefined;
   const transport = response.routeEvidence ?? {
     routeBindingHash: null, adapterId: `${route.provider}-legacy`, expectedProvider: route.provider,
     expectedModel: route.model, expectedOrigin: null, expectedPath: null, actualOrigin: null, actualPath: null,
@@ -445,3 +451,6 @@ function validateReview(value: Review): void { if (!value || !["pass", "repair",
 
 const PLAN_SCHEMA = JSON.stringify({ type: "object", required: ["steps", "readFiles", "writeFiles", "dataClassification", "acceptance"], properties: { nonGoals: { type: "array", items: { type: "string" } }, steps: { type: "array", items: { type: "string" } }, readFiles: { type: "array", items: { type: "string" } }, writeFiles: { type: "array", items: { type: "string" } }, dataClassification: { enum: ["public", "private", "secret_restricted"] }, constraints: { type: "array", items: { type: "string" } }, acceptance: { type: "array", items: { type: "string" } } }, additionalProperties: false });
 const REVIEW_SCHEMA = JSON.stringify({ type: "object", required: ["verdict"], properties: { verdict: { enum: ["pass", "repair", "escalate"] }, findings: { type: "array", items: { type: "string" } }, summary: { type: "string" }, finalText: { type: "string" } }, additionalProperties: false });
+
+/** Legacy stages that bill a provider through the model adapter. VALIDATE (local gate) and CLASSIFY (local classifier) are excluded. */
+const BILLABLE_MODEL_STAGES = new Set<Stage>(["PLAN", "TEXT_FRAME", "TEXT_EXPAND", "EXECUTE", "REPAIR", "REVIEW", "VISUAL_REVIEW", "SOL_DIAGNOSIS"]);

@@ -7,6 +7,17 @@ G:\OneDrive\个人文档\个人AI\模型路由开发
 
 执行“三部分 Agent Team 闭环计划”的 Part 2：真实链路与可审计降费证明。
 
+【当前进度交接（2026-08-25，主 agent 已核对，直接采信勿重做）】
+- Part 1 已全部 PASS 并提交：tsc --noEmit、Part 1 定向 17/17、S8 7/7、S9 26/26、全量 29 files 414/414、schema/examples、git diff --check、外置 build、临时 install→discovery→doctor→rollback 全部通过。
+- 远程 `origin/codex/router-three-part-closure` = `b16ea05`（`ca32fd3` Part 1 完成 + `b16ea05` junction 修复）。本地分支指针可能被 OneDrive 回退到 `da2ac98`，一律以远程为准。
+- 本机环境坑（跨会话持续，详见 `~/.workbuddy/MEMORY.md`，勿重复诊断）：
+  1. Windows 非管理员 + 开发者模式未开启 → file/dir symlink 不可用（`fs.symlink` 静默建空文件），测 reparse 越界用 **junction**（免权限，`lstat().isSymbolicLink()` 返回 true）。
+  2. OneDrive 会实时回退 `.git` refs（commit/reset/fetch 后 packed-refs 被回退）→ 提交用 `git commit-tree <tree> -p <base>` + `git push <commit>:refs/heads/<branch>` 直接推远程，不依赖本地分支指针。
+  3. push credential 是多值链（system `helper-selector` → global GCM，弹 GUI 挂起）→ 用 askpass 脚本输出 `gh auth token` + `GIT_CONFIG_NOSYSTEM=1` + `HOME=<空目录>` + `GIT_ASKPASS=<脚本绝对路径>` + URL 带 username，保留 `-c http.proxy`。
+  4. 测试慢（git worktree 15–45s/用例），vitest testTimeout/hookTimeout 需 120s，bash 长跑用 300s+ 或后台；bash 默认 120s 会把慢测试误判为“硬崩溃”。
+  5. http.proxy = `127.0.0.1:7890`（本地代理），git/gh 网络操作走代理。
+- 真实副作用（写真实 Codex config、credential、真实 provider 请求、GPT-only 请求、commit/push）仍需当次、逐项、带 exact hash 的明确授权，不得自动执行。
+
 只有 Part 1 所有阶段门 PASS 才能开始。先读取 Part 1 交接、README、ROADMAP、docs/16、docs/17、docs/27、docs/28、安装/回滚文档、Pilot schema、pricing catalog、quality policy 和完整 Git 状态。
 
 请作为主 agent 组织 agent team：
@@ -80,3 +91,4 @@ Part 2 硬门：
 
 最终输出 agent team 产出、MCP/config/credential 变更、所有真实请求批准 hash、smoke 结果、paired run records、聚合质量/token/cache/request/wall/成本、下降比例、失败分类、expand|simplify|stop、阶段门和 Git status。
 ```
+

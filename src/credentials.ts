@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { DEEPSEEK_DPAPI_AUTH_ALIAS, DEEPSEEK_ENV_AUTH_ALIAS } from "./route-preflight.js";
+import { DEEPSEEK_DPAPI_AUTH_ALIAS, DEEPSEEK_ENV_AUTH_ALIAS, OPENAI_DPAPI_AUTH_ALIAS, OPENAI_ENV_AUTH_ALIAS } from "./route-preflight.js";
 
 const CHILD_ENV_ALLOWLIST = new Set(["systemroot", "windir", "temp", "tmp"]);
 
@@ -35,6 +35,24 @@ export function loadDeepSeekApiKey(authAlias: string, environment: NodeJS.Proces
     return normalizeCredential(key);
   } catch {
     throw new Error("Unable to decrypt the stored DeepSeek API Key for the current Windows user");
+  }
+}
+
+export function loadOpenAiApiKey(authAlias: string, environment: NodeJS.ProcessEnv = process.env, dependencies: CredentialLoaderDependencies = {}): string | undefined {
+  if (authAlias === OPENAI_ENV_AUTH_ALIAS) return normalizeCredential(environment.OPENAI_API_KEY);
+  if (authAlias !== OPENAI_DPAPI_AUTH_ALIAS) throw new Error("OpenAI credential alias is not supported");
+  if ((dependencies.platform ?? process.platform) !== "win32" || !environment.LOCALAPPDATA) return undefined;
+  const encrypted = path.win32.join(environment.LOCALAPPDATA, "CodexRouter", "openai-key.dpapi");
+  if (!(dependencies.fileExists ?? existsSync)(encrypted)) return undefined;
+  const childEnvironment = buildCredentialSubprocessEnvironment(environment, encrypted);
+  const executable = resolveWindowsPowerShell(childEnvironment);
+  try {
+    const key = dependencies.decrypt
+      ? dependencies.decrypt(encrypted, childEnvironment, executable)
+      : decryptStoredCredential(executable, childEnvironment);
+    return normalizeCredential(key);
+  } catch {
+    throw new Error("Unable to decrypt the stored OpenAI API Key for the current Windows user");
   }
 }
 
