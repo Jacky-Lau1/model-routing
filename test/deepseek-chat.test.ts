@@ -284,6 +284,33 @@ describe("DeepSeek official Chat Completions adapter", () => {
     const response = await adapter.invoke(canonicalBound({ stage: "TEXT_EXPAND", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal" }));
     expect(response.estimatedListCostUsd).toBe(0); expect(response.providerReportedCostUsd).toBeNull(); expect(response.transportRounds?.[0].cache_status).toBe("none");
   });
+
+  it("nudges once on an empty final message before returning the final answer", async () => {
+    const route = canonicalRoute(); let calls = 0;
+    const adapter = canonicalAdapter(async () => {
+      calls++;
+      const choice = calls === 1
+        ? { finish_reason: "stop", message: { content: "", reasoning_content: "thinking" } }
+        : { finish_reason: "stop", message: { content: "done" } };
+      return responseAt({ id: `nudge-${calls}`, model: route.model, choices: [choice], usage: { prompt_tokens: 10, completion_tokens: 2, prompt_cache_hit_tokens: 0, prompt_cache_miss_tokens: 10, completion_tokens_details: { reasoning_tokens: 0 } } }, { url: targetUrl });
+    });
+    const response = await adapter.invoke(canonicalBound({ stage: "TEXT_EXPAND", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal" }));
+    expect(response.text).toBe("done"); expect(calls).toBe(2);
+  });
+
+  it("fails closed with a clear reason when the final message is length-truncated", async () => {
+    const route = canonicalRoute();
+    const adapter = canonicalAdapter(async () => responseAt({ id: "trunc", model: route.model, choices: [{ finish_reason: "length", message: { content: "" } }], usage: { prompt_tokens: 10, completion_tokens: 2, prompt_cache_hit_tokens: 0, prompt_cache_miss_tokens: 10, completion_tokens_details: { reasoning_tokens: 0 } } }, { url: targetUrl }));
+    await expect(adapter.invoke(canonicalBound({ stage: "TEXT_EXPAND", route, stablePrefix: "s", projectSummary: "p", dynamicInput: "t", sensitivity: "normal" }))).rejects.toThrow(/truncated/);
+  });
+
+  it("does not false-block a large input under the byte-aware token estimate", async () => {
+    const route = canonicalRoute();
+    const adapter = canonicalAdapter(async () => responseAt({ id: "big", model: route.model, choices: [{ message: { content: "done" } }], usage: { prompt_tokens: 1_000, completion_tokens: 2, prompt_cache_hit_tokens: 0, prompt_cache_miss_tokens: 1_000, completion_tokens_details: { reasoning_tokens: 0 } } }, { url: targetUrl }));
+    const bigInput = "x".repeat(40_000);
+    const response = await adapter.invoke(canonicalBound({ stage: "TEXT_EXPAND", route, stablePrefix: "s", projectSummary: "p", dynamicInput: bigInput, sensitivity: "normal" }));
+    expect(response.text).toBe("done");
+  });
 });
 
 function testAdapter(options: { apiKey: string; fetchImpl: typeof fetch }): DeepSeekChatAdapter {

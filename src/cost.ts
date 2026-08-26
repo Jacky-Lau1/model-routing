@@ -44,9 +44,19 @@ const CATALOG_BODY: Omit<PricingCatalog, "catalog_hash"> = {
   valid_until: VALID_UNTIL,
   entries: [
     {
+      provider: "openai-codex", model: "gpt-5.6-sol", effective_at: RETRIEVED_AT,
+      source_url: "https://developers.openai.com/api/docs/pricing",
+      time_bands: [{ name: "standard", utc_rule: "always", rates: { input_cache_hit_usd_per_million: 0.50, input_cache_miss_usd_per_million: 5.00, output_usd_per_million: 30.00 } }],
+    },
+    {
       provider: "openai-codex", model: "gpt-5.6-terra", effective_at: RETRIEVED_AT,
-      source_url: "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+      source_url: "https://developers.openai.com/api/docs/pricing",
       time_bands: [{ name: "standard", utc_rule: "always", rates: { input_cache_hit_usd_per_million: 0.20, input_cache_miss_usd_per_million: 2.00, output_usd_per_million: 12.00 } }],
+    },
+    {
+      provider: "openai-codex", model: "gpt-5.6-luna", effective_at: RETRIEVED_AT,
+      source_url: "https://developers.openai.com/api/docs/pricing",
+      time_bands: [{ name: "standard", utc_rule: "always", rates: { input_cache_hit_usd_per_million: 0.02, input_cache_miss_usd_per_million: 0.20, output_usd_per_million: 1.20 } }],
     },
     {
       provider: "deepseek", model: "deepseek-v4-flash", effective_at: "2026-08-16T16:00:00.000Z",

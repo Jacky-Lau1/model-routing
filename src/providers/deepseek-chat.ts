@@ -72,7 +72,7 @@ export class DeepSeekChatAdapter implements ProviderAdapter {
       { role: "system", content: request.stablePrefix },
       { role: "user", content: `${request.projectSummary}\n\n${request.dynamicInput}` },
     ];
-    const usage = emptyUsage(); const usageAvailability: UsageAvailability = { inputTokens: true, outputTokens: true, reasoningTokens: true, cacheHitTokens: true, cacheMissTokens: true }; const requestIds: string[] = []; const requestIdSources = new Set<RequestIdSource>(); const observations: RouteTransportObservation[] = []; const rounds: ProviderTransportRound[] = []; let toolCallsUsed = 0;
+    const usage = emptyUsage(); const usageAvailability: UsageAvailability = { inputTokens: true, outputTokens: true, reasoningTokens: true, cacheHitTokens: true, cacheMissTokens: true }; const requestIds: string[] = []; const requestIdSources = new Set<RequestIdSource>(); const observations: RouteTransportObservation[] = []; const rounds: ProviderTransportRound[] = []; let toolCallsUsed = 0; let finalContentNudges = 0;
     const tools = executor ? TOOL_DEFINITIONS : undefined;
     for (let turn = 0; turn <= request.route.maxToolTurns; turn++) {
       const prior = budgetProgress(request.budgetState, rounds);
@@ -110,12 +110,24 @@ export class DeepSeekChatAdapter implements ProviderAdapter {
         accumulateAttemptUsage(usage, roundUsage);
         if (canonical) assertPostResponseBudget(request, rounds);
       }
-      const assistant = response.choices?.[0]?.message;
+      const choice = response.choices?.[0];
+      const assistant = choice?.message;
       if (!assistant) throw new DeepSeekTransportError(new Error("DeepSeek returned no assistant message"), rounds);
       const toolCalls = assistant.tool_calls as Array<any> | undefined;
       if (!toolCalls?.length) {
         const text = typeof assistant.content === "string" ? assistant.content : "";
-        if (!text) throw new DeepSeekTransportError(new Error("DeepSeek returned no final content"), rounds);
+        if (!text) {
+          const finishReason = choice?.finish_reason;
+          if (finishReason === "length") throw new DeepSeekTransportError(new Error("DeepSeek output was truncated by the token limit before producing a final answer"), rounds);
+          if (finishReason === "tool_calls") throw new DeepSeekTransportError(new Error("DeepSeek signalled tool calls but returned none"), rounds);
+          // Genuine empty final message: give the model one bounded nudge to emit the final answer,
+          // reusing the normal pre-send budget gate so a request-count/cost ceiling still applies.
+          if (finalContentNudges >= MAX_FINAL_CONTENT_NUDGES) throw new DeepSeekTransportError(new Error(`DeepSeek returned no final content after ${MAX_FINAL_CONTENT_NUDGES} retry`), rounds);
+          finalContentNudges++;
+          messages.push({ role: "assistant", content: "", reasoning_content: assistant.reasoning_content ?? "" });
+          messages.push({ role: "user", content: "Continue and provide the final answer now." });
+          continue;
+        }
         const requestId = requestIds[0] ?? null;
         return {
           text, requestId, provider: "deepseek", model: binding.model_id, usage, usageAvailability,
@@ -257,6 +269,7 @@ function requestIdSource(sources: Set<RequestIdSource>): RequestIdSource {
   return "not_available";
 }
 
+const MAX_FINAL_CONTENT_NUDGES = 1;
 const TOOL_DEFINITIONS = [
   tool("list_manifest", "List only the explicitly approved read manifest without reading file contents", { type: "object", properties: {}, additionalProperties: false }),
   tool("read_file", "Read one approved manifest file after path, classification, size, encoding, and hash checks", { type: "object", required: ["path"], properties: { path: { type: "string" } }, additionalProperties: false }),
@@ -312,7 +325,11 @@ function assertPreSendBudget(request: ProviderRequest, body: Record<string, unkn
   const binding = request.routeBinding!; const budget = binding.request_budget; const progress = budgetProgress(request.budgetState, rounds);
   if (progress.attempts_used >= budget.max_attempts) throw new Error("No approved provider-attempt budget remains");
   if (progress.provider_requests_used + 1 > budget.max_provider_requests) throw new Error("Next provider request would exceed the approved request-count budget");
-  const serialized = JSON.stringify(body); const inputUpper = Buffer.byteLength(serialized, "utf8") + 512;
+  // Estimate the next request's input-token upper bound from the serialized body. A UTF-8 byte
+  // count over-estimates tokens ~3-4x for ASCII code and cannot be compared against a token budget;
+  // divide by 3 to convert bytes to a conservative token ceiling (accurate for CJK, ~33% headroom
+  // for ASCII) and keep a fixed 512-token margin.
+  const serialized = JSON.stringify(body); const inputUpper = Math.ceil(Buffer.byteLength(serialized, "utf8") / 3) + 512;
   const outputUpper = Number(body.max_tokens);
   if (!Number.isInteger(outputUpper) || outputUpper < 1 || progress.input_tokens_used + inputUpper > budget.max_input_tokens || progress.output_tokens_used + outputUpper > budget.max_output_tokens) throw new Error("Next provider request cannot be proven within the approved token budget");
   if (progress.wall_clock_time_ms_used + budget.max_request_wall_time_ms > budget.max_wall_time_ms) throw new Error("Next provider request cannot be proven within the approved total wall budget");
